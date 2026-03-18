@@ -1,0 +1,51 @@
+{
+  "appId": "com.databasecompare.app",
+  "productName": "数据库比对工具",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "src/main/**/*",
+    "src/renderer/dist/**/*",
+    "src/python-service/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "src/python-service",
+      "to": "python-service",
+      "filter": ["**/*"]
+    }
+  ],
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      }
+    ]
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  }
+}
