@@ -1,0 +1,44 @@
+.titleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  -webkit-app-region: drag;
+}
+
+.dragRegion {
+  flex: 1;
+  padding-left: 12px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+.btn {
+  width: 46px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    background: #e8e8e8;
+  }
+}
+
+.closeBtn:hover {
+  background: #e81123;
+  color: #fff;
+}
