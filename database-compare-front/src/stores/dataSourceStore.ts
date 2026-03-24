@@ -19,22 +19,7 @@ interface DataSourceState {
 }
 
 export const useDataSourceStore = create<DataSourceState>((set, get) => ({
-  dataSources: [
-    // Mock data for initial UI testing
-    {
-      id: '1',
-      name: '生产环境-MySQL',
-      dbType: 'mysql',
-      host: '192.168.1.100',
-      port: 3306,
-      database: 'prod_db',
-      username: 'root',
-      charset: 'UTF-8',
-      timeout: 30,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-  ],
+  dataSources: [],  // 初始为空数组，从后端加载
   groups: [],
   loading: false,
 
@@ -42,9 +27,12 @@ export const useDataSourceStore = create<DataSourceState>((set, get) => ({
     set({ loading: true });
     try {
       const response = await dataSourceApi.getList();
-      set({ dataSources: response.data });
+      // 后端返回格式: { code: 0, message: 'success', data: [...] }
+      const data = response.data?.data || [];
+      set({ dataSources: Array.isArray(data) ? data : [] });
     } catch (e) {
-      // Ignore for mock
+      // API 请求失败时保持原有数据
+      console.error('Failed to fetch datasources:', e);
     } finally {
       set({ loading: false });
     }
@@ -88,9 +76,10 @@ export const useDataSourceStore = create<DataSourceState>((set, get) => ({
   testConnection: async (id) => {
     try {
       const response = await dataSourceApi.testConnection(id);
-      return response.data;
+      // 后端返回格式: { code: 0, message: 'success', data: {...} }
+      return response.data?.data || { success: false, message: '请求失败' };
     } catch (e) {
-      return { success: true, message: 'Mock connection success', latency: 12 };
+      return { success: false, message: '连接测试失败' };
     }
   },
 

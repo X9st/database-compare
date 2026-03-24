@@ -44,11 +44,11 @@ export const useCompareStore = create<CompareState>((set, get) => ({
     if (!currentTask) throw new Error('No task config');
     try {
       set({ taskStatus: 'running' });
-      // Mock API call
-      // const res = await compareApi.startTask(currentTask);
-      const mockTaskId = 'task_' + Date.now();
-      set({ taskId: mockTaskId });
-      return mockTaskId;
+      const response = await compareApi.startTask(currentTask);
+      const taskId = response.data?.data?.taskId;
+      if (!taskId) throw new Error('Failed to get task ID');
+      set({ taskId });
+      return taskId;
     } catch (e) {
       set({ taskStatus: 'error' });
       throw e;

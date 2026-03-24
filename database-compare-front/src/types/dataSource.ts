@@ -1,5 +1,12 @@
 export type DatabaseType = 'mysql' | 'oracle' | 'sqlserver' | 'postgresql' | 'dm' | 'inceptor';
 
+// 通用 API 响应格式
+export interface ApiResponse<T> {
+  code: number;
+  message: string;
+  data: T;
+}
+
 export interface DataSource {
   id: string;
   name: string;

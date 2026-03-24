@@ -1,76 +1,269 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Tabs, Card, Row, Col, Statistic, Button, Table, Tag, message } from 'antd';
+import { Tabs, Card, Row, Col, Statistic, Button, Table, Tag, message, Spin, Pagination, Select, Modal } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { resultApi, CompareResultSummary, StructureDiff, DataDiff, PageInfo } from '@/services/resultApi';
+
+const { Option } = Select;
 
 const Result: React.FC = () => {
   const { taskId } = useParams();
   const navigate = useNavigate();
+  
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<CompareResultSummary | null>(null);
+  const [structureDiffs, setStructureDiffs] = useState<StructureDiff[]>([]);
+  const [structurePageInfo, setStructurePageInfo] = useState<PageInfo>({ page: 1, page_size: 20, total: 0, total_pages: 0 });
+  const [dataDiffs, setDataDiffs] = useState<DataDiff[]>([]);
+  const [dataPageInfo, setDataPageInfo] = useState<PageInfo>({ page: 1, page_size: 20, total: 0, total_pages: 0 });
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'html' | 'txt'>('excel');
 
-  const handleExport = () => {
-    message.loading({ content: '正在生成报告...', key: 'export' });
-    setTimeout(() => {
-      message.success({ content: '报告导出成功！', key: 'export', duration: 2 });
-    }, 1500);
+  useEffect(() => {
+    if (taskId) {
+      fetchResult();
+      fetchStructureDiffs(1);
+      fetchDataDiffs(1);
+    }
+  }, [taskId]);
+
+  const fetchResult = async () => {
+    setLoading(true);
+    try {
+      const response = await resultApi.getResult(taskId!);
+      setSummary(response.data?.data || null);
+    } catch (e) {
+      console.error('Failed to fetch result:', e);
+      message.error('获取比对结果失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const summary = {
-    totalTables: 150,
-    structureMatchTables: 148,
-    structureDiffTables: 2,
-    dataMatchTables: 145,
-    dataDiffTables: 5,
+  const fetchStructureDiffs = async (page: number, pageSize = 20) => {
+    try {
+      const response = await resultApi.getStructureDiffs(taskId!, { page, page_size: pageSize });
+      setStructureDiffs(response.data?.data || []);
+      if (response.data?.page_info) {
+        setStructurePageInfo(response.data.page_info);
+      }
+    } catch (e) {
+      console.error('Failed to fetch structure diffs:', e);
+    }
+  };
+
+  const fetchDataDiffs = async (page: number, pageSize = 20) => {
+    try {
+      const response = await resultApi.getDataDiffs(taskId!, { page, page_size: pageSize });
+      setDataDiffs(response.data?.data || []);
+      if (response.data?.page_info) {
+        setDataPageInfo(response.data.page_info);
+      }
+    } catch (e) {
+      console.error('Failed to fetch data diffs:', e);
+    }
+  };
+
+  const handleExport = async () => {
+    setExportLoading(true);
+    try {
+      const response = await resultApi.exportReport(taskId!, {
+        format: exportFormat,
+        includeSummary: true,
+        includeStructureDiff: true,
+        includeDataDiff: true,
+      });
+      const result = response.data?.data;
+      if (result?.downloadUrl) {
+        // 下载文件
+        window.open(result.downloadUrl, '_blank');
+        message.success('报告导出成功');
+      } else {
+        message.success('报告生成成功，请稍后查看');
+      }
+      setExportModalVisible(false);
+    } catch (e) {
+      message.error('导出失败');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const getDiffTypeColor = (type: string) => {
+    switch (type) {
+      case 'column_missing': return 'red';
+      case 'column_extra': return 'orange';
+      case 'column_type_diff': return 'gold';
+      case 'index_diff': return 'blue';
+      case 'constraint_diff': return 'purple';
+      case 'value_diff': return 'orange';
+      case 'row_missing_in_target': return 'red';
+      case 'row_missing_in_source': return 'volcano';
+      default: return 'default';
+    }
+  };
+
+  const getDiffTypeText = (type: string) => {
+    switch (type) {
+      case 'column_missing': return '字段缺失';
+      case 'column_extra': return '多余字段';
+      case 'column_type_diff': return '类型不一致';
+      case 'index_diff': return '索引差异';
+      case 'constraint_diff': return '约束差异';
+      case 'value_diff': return '值不一致';
+      case 'row_missing_in_target': return '目标库缺失';
+      case 'row_missing_in_source': return '源库缺失';
+      default: return type;
+    }
   };
 
   const structureColumns = [
-    { title: '表名', dataIndex: 'tableName' },
-    { title: '差异类型', dataIndex: 'diffType', render: (t: string) => <Tag color="orange">{t}</Tag> },
-    { title: '字段名', dataIndex: 'fieldName' },
+    { title: '表名', dataIndex: 'tableName', width: 150 },
+    { 
+      title: '差异类型', 
+      dataIndex: 'diffType', 
+      width: 120,
+      render: (t: string) => <Tag color={getDiffTypeColor(t)}>{getDiffTypeText(t)}</Tag> 
+    },
+    { title: '字段名', dataIndex: 'fieldName', width: 150 },
     { title: '源库值', dataIndex: 'sourceValue' },
     { title: '目标库值', dataIndex: 'targetValue' },
-  ];
-
-  const structureData = [
-    { id: '1', tableName: 'users', diffType: 'column_type_diff', fieldName: 'age', sourceValue: 'INT', targetValue: 'VARCHAR(10)' },
-    { id: '2', tableName: 'orders', diffType: 'index_diff', fieldName: 'idx_status', sourceValue: '存在', targetValue: '缺失' },
+    { title: '详情', dataIndex: 'diffDetail', ellipsis: true },
   ];
 
   const dataColumns = [
-    { title: '表名', dataIndex: 'tableName' },
-    { title: '主键', dataIndex: 'primaryKey', render: (pk: any) => JSON.stringify(pk) },
-    { title: '差异类型', dataIndex: 'diffType', render: (t: string) => <Tag color="red">{t}</Tag> },
-    { title: '差异字段', dataIndex: 'diffColumns', render: (cols: string[]) => cols.join(', ') },
+    { title: '表名', dataIndex: 'tableName', width: 150 },
+    { title: '主键', dataIndex: 'primaryKey', width: 200, render: (pk: any) => JSON.stringify(pk) },
+    { 
+      title: '差异类型', 
+      dataIndex: 'diffType', 
+      width: 120,
+      render: (t: string) => <Tag color={getDiffTypeColor(t)}>{getDiffTypeText(t)}</Tag> 
+    },
+    { title: '差异字段', dataIndex: 'diffColumns', render: (cols: string[]) => cols?.join(', ') || '-' },
   ];
 
-  const dataDiffs = [
-    { id: '1', tableName: 'users', primaryKey: { id: 1001 }, diffType: 'value_diff', diffColumns: ['status'] },
-    { id: '2', tableName: 'orders', primaryKey: { id: 5002 }, diffType: 'row_missing_in_target', diffColumns: [] },
-  ];
+  if (loading) {
+    return (
+      <div style={{ background: '#fff', padding: 24, borderRadius: 8, minHeight: '100%', textAlign: 'center' }}>
+        <Spin size="large" tip="加载比对结果中..." />
+      </div>
+    );
+  }
 
   return (
     <div style={{ background: '#fff', padding: 24, borderRadius: 8, minHeight: '100%' }}>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/history')}>返回历史记录</Button>
-        <Button type="primary" icon={<DownloadOutlined />} onClick={handleExport}>导出报告</Button>
+        <Button type="primary" icon={<DownloadOutlined />} onClick={() => setExportModalVisible(true)}>导出报告</Button>
       </div>
 
       <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}><Card><Statistic title="总表数" value={summary.totalTables} /></Card></Col>
-        <Col span={6}><Card><Statistic title="结构差异表" value={summary.structureDiffTables} valueStyle={{ color: '#cf1322' }} /></Card></Col>
-        <Col span={6}><Card><Statistic title="数据差异表" value={summary.dataDiffTables} valueStyle={{ color: '#cf1322' }} /></Card></Col>
-        <Col span={6}><Card><Statistic title="完全一致表" value={summary.dataMatchTables} valueStyle={{ color: '#3f8600' }} /></Card></Col>
+        <Col span={5}>
+          <Card>
+            <Statistic title="总表数" value={summary?.totalTables || 0} />
+          </Card>
+        </Col>
+        <Col span={5}>
+          <Card>
+            <Statistic 
+              title="结构一致" 
+              value={summary?.structureSameCount || 0} 
+              valueStyle={{ color: '#3f8600' }} 
+            />
+          </Card>
+        </Col>
+        <Col span={5}>
+          <Card>
+            <Statistic 
+              title="结构差异" 
+              value={summary?.structureDiffCount || 0} 
+              valueStyle={{ color: '#cf1322' }} 
+            />
+          </Card>
+        </Col>
+        <Col span={5}>
+          <Card>
+            <Statistic 
+              title="数据一致" 
+              value={summary?.dataSameCount || 0} 
+              valueStyle={{ color: '#3f8600' }} 
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card>
+            <Statistic 
+              title="数据差异" 
+              value={summary?.dataDiffCount || 0} 
+              valueStyle={{ color: '#cf1322' }} 
+            />
+          </Card>
+        </Col>
       </Row>
 
       <Card bordered={false}>
         <Tabs defaultActiveKey="1">
-          <Tabs.TabPane tab="结构差异" key="1">
-            <Table columns={structureColumns} dataSource={structureData} rowKey="id" />
+          <Tabs.TabPane tab={`结构差异 (${structurePageInfo.total})`} key="1">
+            <Table 
+              columns={structureColumns} 
+              dataSource={structureDiffs} 
+              rowKey="id" 
+              pagination={false}
+              locale={{ emptyText: '无结构差异' }}
+            />
+            {structurePageInfo.total > 0 && (
+              <div style={{ marginTop: 16, textAlign: 'right' }}>
+                <Pagination
+                  current={structurePageInfo.page}
+                  pageSize={structurePageInfo.page_size}
+                  total={structurePageInfo.total}
+                  showSizeChanger
+                  onChange={(page, pageSize) => fetchStructureDiffs(page, pageSize)}
+                />
+              </div>
+            )}
           </Tabs.TabPane>
-          <Tabs.TabPane tab="数据差异" key="2">
-            <Table columns={dataColumns} dataSource={dataDiffs} rowKey="id" />
+          <Tabs.TabPane tab={`数据差异 (${dataPageInfo.total})`} key="2">
+            <Table 
+              columns={dataColumns} 
+              dataSource={dataDiffs} 
+              rowKey="id" 
+              pagination={false}
+              locale={{ emptyText: '无数据差异' }}
+            />
+            {dataPageInfo.total > 0 && (
+              <div style={{ marginTop: 16, textAlign: 'right' }}>
+                <Pagination
+                  current={dataPageInfo.page}
+                  pageSize={dataPageInfo.page_size}
+                  total={dataPageInfo.total}
+                  showSizeChanger
+                  onChange={(page, pageSize) => fetchDataDiffs(page, pageSize)}
+                />
+              </div>
+            )}
           </Tabs.TabPane>
         </Tabs>
       </Card>
+
+      <Modal
+        title="导出比对报告"
+        open={exportModalVisible}
+        onOk={handleExport}
+        onCancel={() => setExportModalVisible(false)}
+        confirmLoading={exportLoading}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <span style={{ marginRight: 8 }}>导出格式：</span>
+          <Select value={exportFormat} onChange={setExportFormat} style={{ width: 200 }}>
+            <Option value="excel">Excel (.xlsx)</Option>
+            <Option value="html">HTML 报告</Option>
+            <Option value="txt">文本文件 (.txt)</Option>
+          </Select>
+        </div>
+      </Modal>
     </div>
   );
 };

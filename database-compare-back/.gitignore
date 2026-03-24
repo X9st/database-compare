@@ -1,0 +1,33 @@
+# 依赖
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# 数据目录
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 环境变量
+.env.local
+.env.production
+
+# 日志
+*.log
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 构建
+dist/
+build/
+*.egg-info/
