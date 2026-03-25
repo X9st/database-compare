@@ -19,9 +19,9 @@ const DataSourceList: React.FC<Props> = ({ dataSource, loading, onEdit, onDelete
     },
     {
       title: '类型',
-      dataIndex: 'dbType',
-      key: 'dbType',
-      render: (type: string) => <Tag color="blue">{type.toUpperCase()}</Tag>,
+      dataIndex: 'db_type',
+      key: 'db_type',
+      render: (type?: string) => <Tag color="blue">{(type || '-').toUpperCase()}</Tag>,
     },
     {
       title: '主机地址',

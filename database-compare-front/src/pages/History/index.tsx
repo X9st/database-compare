@@ -14,10 +14,10 @@ const History: React.FC = () => {
     total_pages: 0,
   });
 
-  const fetchHistory = async (page = 1, pageSize = 20) => {
+  const fetchHistory = async (page = 1, page_size = 20) => {
     setLoading(true);
     try {
-      const response = await historyApi.getList({ page, page_size: pageSize });
+      const response = await historyApi.getList({ page, page_size });
       const result = response.data;
       setData(result.data || []);
       if (result.page_info) {
@@ -35,9 +35,9 @@ const History: React.FC = () => {
     fetchHistory();
   }, []);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (task_id: string) => {
     try {
-      await historyApi.delete(id);
+      await historyApi.delete(task_id);
       message.success('删除成功');
       fetchHistory(pageInfo.page, pageInfo.page_size);
     } catch (e) {
@@ -45,8 +45,8 @@ const History: React.FC = () => {
     }
   };
 
-  const handlePageChange = (page: number, pageSize: number) => {
-    fetchHistory(page, pageSize);
+  const handlePageChange = (page: number, page_size: number) => {
+    fetchHistory(page, page_size);
   };
 
   const getStatusColor = (status: string) => {
@@ -66,30 +66,37 @@ const History: React.FC = () => {
       case 'paused': return '已暂停';
       case 'failed': return '失败';
       case 'pending': return '等待中';
+      case 'cancelled': return '已取消';
       default: return status;
     }
   };
 
   const columns = [
-    { title: '任务ID', dataIndex: 'id', width: 200 },
-    { title: '源数据库', dataIndex: 'sourceName', render: (v: string, r: HistoryItem) => v || r.sourceId },
-    { title: '目标数据库', dataIndex: 'targetName', render: (v: string, r: HistoryItem) => v || r.targetId },
-    { 
-      title: '状态', 
-      dataIndex: 'status', 
+    { title: '任务ID', dataIndex: 'task_id', width: 220 },
+    { title: '源数据库', key: 'source_db', render: (_: unknown, record: HistoryItem) => record.source_db?.name || record.source_db?.id || '-' },
+    { title: '目标数据库', key: 'target_db', render: (_: unknown, record: HistoryItem) => record.target_db?.name || record.target_db?.id || '-' },
+    {
+      title: '状态',
+      dataIndex: 'status',
       width: 100,
-      render: (s: string) => <Tag color={getStatusColor(s)}>{getStatusText(s)}</Tag> 
+      render: (status: string) => <Tag color={getStatusColor(status)}>{getStatusText(status)}</Tag>
     },
-    { title: '开始时间', dataIndex: 'startedAt', width: 180 },
-    { title: '完成时间', dataIndex: 'completedAt', width: 180 },
-    { 
-      title: '操作', 
+    { title: '表数量', dataIndex: 'table_count', width: 100 },
+    { title: '创建时间', dataIndex: 'created_at', width: 180 },
+    {
+      title: '操作',
       key: 'action',
-      width: 150,
-      render: (_: any, record: HistoryItem) => (
+      width: 180,
+      render: (_: unknown, record: HistoryItem) => (
         <Space>
-          <Button type="link" onClick={() => navigate(`/result/${record.id}`)}>查看结果</Button>
-          <Popconfirm title="确定删除此记录吗？" onConfirm={() => handleDelete(record.id)}>
+          <Button
+            type="link"
+            disabled={!record.result_id}
+            onClick={() => record.result_id && navigate(`/result/${record.result_id}`)}
+          >
+            查看结果
+          </Button>
+          <Popconfirm title="确定删除此记录吗？" onConfirm={() => handleDelete(record.task_id)}>
             <Button type="link" danger>删除</Button>
           </Popconfirm>
         </Space>
@@ -100,10 +107,10 @@ const History: React.FC = () => {
   return (
     <div style={{ background: '#fff', padding: 24, borderRadius: 8, minHeight: '100%' }}>
       <Card title="历史记录" bordered={false}>
-        <Table 
-          columns={columns} 
-          dataSource={data} 
-          rowKey="id" 
+        <Table
+          columns={columns}
+          dataSource={data}
+          rowKey="task_id"
           loading={loading}
           pagination={false}
         />

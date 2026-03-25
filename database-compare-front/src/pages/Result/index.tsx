@@ -3,13 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Card, Row, Col, Statistic, Button, Table, Tag, message, Spin, Pagination, Select, Modal } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { resultApi, CompareResultSummary, StructureDiff, DataDiff, PageInfo } from '@/services/resultApi';
+import { resolveApiUrl } from '@/services/api';
 
 const { Option } = Select;
 
 const Result: React.FC = () => {
-  const { taskId } = useParams();
+  const { result_id } = useParams();
   const navigate = useNavigate();
-  
+
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<CompareResultSummary | null>(null);
   const [structureDiffs, setStructureDiffs] = useState<StructureDiff[]>([]);
@@ -21,17 +22,20 @@ const Result: React.FC = () => {
   const [exportFormat, setExportFormat] = useState<'excel' | 'html' | 'txt'>('excel');
 
   useEffect(() => {
-    if (taskId) {
+    if (result_id) {
       fetchResult();
       fetchStructureDiffs(1);
       fetchDataDiffs(1);
     }
-  }, [taskId]);
+  }, [result_id]);
 
   const fetchResult = async () => {
+    if (!result_id) {
+      return;
+    }
     setLoading(true);
     try {
-      const response = await resultApi.getResult(taskId!);
+      const response = await resultApi.getResult(result_id);
       setSummary(response.data?.data || null);
     } catch (e) {
       console.error('Failed to fetch result:', e);
@@ -41,9 +45,12 @@ const Result: React.FC = () => {
     }
   };
 
-  const fetchStructureDiffs = async (page: number, pageSize = 20) => {
+  const fetchStructureDiffs = async (page: number, page_size = 20) => {
+    if (!result_id) {
+      return;
+    }
     try {
-      const response = await resultApi.getStructureDiffs(taskId!, { page, page_size: pageSize });
+      const response = await resultApi.getStructureDiffs(result_id, { page, page_size });
       setStructureDiffs(response.data?.data || []);
       if (response.data?.page_info) {
         setStructurePageInfo(response.data.page_info);
@@ -53,9 +60,12 @@ const Result: React.FC = () => {
     }
   };
 
-  const fetchDataDiffs = async (page: number, pageSize = 20) => {
+  const fetchDataDiffs = async (page: number, page_size = 20) => {
+    if (!result_id) {
+      return;
+    }
     try {
-      const response = await resultApi.getDataDiffs(taskId!, { page, page_size: pageSize });
+      const response = await resultApi.getDataDiffs(result_id, { page, page_size });
       setDataDiffs(response.data?.data || []);
       if (response.data?.page_info) {
         setDataPageInfo(response.data.page_info);
@@ -66,22 +76,23 @@ const Result: React.FC = () => {
   };
 
   const handleExport = async () => {
+    if (!result_id) {
+      return;
+    }
     setExportLoading(true);
     try {
-      const response = await resultApi.exportReport(taskId!, {
+      const response = await resultApi.exportReport(result_id, {
         format: exportFormat,
-        includeSummary: true,
-        includeStructureDiff: true,
-        includeDataDiff: true,
+        options: {
+          include_structure_diffs: true,
+          include_data_diffs: true,
+        },
       });
       const result = response.data?.data;
-      if (result?.downloadUrl) {
-        // 下载文件
-        window.open(result.downloadUrl, '_blank');
-        message.success('报告导出成功');
-      } else {
-        message.success('报告生成成功，请稍后查看');
+      if (result?.download_url) {
+        window.open(resolveApiUrl(result.download_url), '_blank');
       }
+      message.success('报告导出成功');
       setExportModalVisible(false);
     } catch (e) {
       message.error('导出失败');
@@ -119,29 +130,29 @@ const Result: React.FC = () => {
   };
 
   const structureColumns = [
-    { title: '表名', dataIndex: 'tableName', width: 150 },
-    { 
-      title: '差异类型', 
-      dataIndex: 'diffType', 
+    { title: '表名', dataIndex: 'table_name', width: 150 },
+    {
+      title: '差异类型',
+      dataIndex: 'diff_type',
       width: 120,
-      render: (t: string) => <Tag color={getDiffTypeColor(t)}>{getDiffTypeText(t)}</Tag> 
+      render: (type: string) => <Tag color={getDiffTypeColor(type)}>{getDiffTypeText(type)}</Tag>
     },
-    { title: '字段名', dataIndex: 'fieldName', width: 150 },
-    { title: '源库值', dataIndex: 'sourceValue' },
-    { title: '目标库值', dataIndex: 'targetValue' },
-    { title: '详情', dataIndex: 'diffDetail', ellipsis: true },
+    { title: '字段名', dataIndex: 'field_name', width: 150 },
+    { title: '源库值', dataIndex: 'source_value' },
+    { title: '目标库值', dataIndex: 'target_value' },
+    { title: '详情', dataIndex: 'diff_detail', ellipsis: true },
   ];
 
   const dataColumns = [
-    { title: '表名', dataIndex: 'tableName', width: 150 },
-    { title: '主键', dataIndex: 'primaryKey', width: 200, render: (pk: any) => JSON.stringify(pk) },
-    { 
-      title: '差异类型', 
-      dataIndex: 'diffType', 
+    { title: '表名', dataIndex: 'table_name', width: 150 },
+    { title: '主键', dataIndex: 'primary_key', width: 200, render: (primary_key: any) => JSON.stringify(primary_key) },
+    {
+      title: '差异类型',
+      dataIndex: 'diff_type',
       width: 120,
-      render: (t: string) => <Tag color={getDiffTypeColor(t)}>{getDiffTypeText(t)}</Tag> 
+      render: (type: string) => <Tag color={getDiffTypeColor(type)}>{getDiffTypeText(type)}</Tag>
     },
-    { title: '差异字段', dataIndex: 'diffColumns', render: (cols: string[]) => cols?.join(', ') || '-' },
+    { title: '差异字段', dataIndex: 'diff_columns', render: (diff_columns: string[]) => diff_columns?.join(', ') || '-' },
   ];
 
   if (loading) {
@@ -162,42 +173,42 @@ const Result: React.FC = () => {
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={5}>
           <Card>
-            <Statistic title="总表数" value={summary?.totalTables || 0} />
+            <Statistic title="总表数" value={summary?.summary?.total_tables || 0} />
           </Card>
         </Col>
         <Col span={5}>
           <Card>
-            <Statistic 
-              title="结构一致" 
-              value={summary?.structureSameCount || 0} 
-              valueStyle={{ color: '#3f8600' }} 
+            <Statistic
+              title="结构一致"
+              value={summary?.summary?.structure_match_tables || 0}
+              valueStyle={{ color: '#3f8600' }}
             />
           </Card>
         </Col>
         <Col span={5}>
           <Card>
-            <Statistic 
-              title="结构差异" 
-              value={summary?.structureDiffCount || 0} 
-              valueStyle={{ color: '#cf1322' }} 
+            <Statistic
+              title="结构差异"
+              value={summary?.summary?.structure_diff_tables || 0}
+              valueStyle={{ color: '#cf1322' }}
             />
           </Card>
         </Col>
         <Col span={5}>
           <Card>
-            <Statistic 
-              title="数据一致" 
-              value={summary?.dataSameCount || 0} 
-              valueStyle={{ color: '#3f8600' }} 
+            <Statistic
+              title="数据一致"
+              value={summary?.summary?.data_match_tables || 0}
+              valueStyle={{ color: '#3f8600' }}
             />
           </Card>
         </Col>
         <Col span={4}>
           <Card>
-            <Statistic 
-              title="数据差异" 
-              value={summary?.dataDiffCount || 0} 
-              valueStyle={{ color: '#cf1322' }} 
+            <Statistic
+              title="数据差异"
+              value={summary?.summary?.data_diff_tables || 0}
+              valueStyle={{ color: '#cf1322' }}
             />
           </Card>
         </Col>
@@ -206,10 +217,10 @@ const Result: React.FC = () => {
       <Card bordered={false}>
         <Tabs defaultActiveKey="1">
           <Tabs.TabPane tab={`结构差异 (${structurePageInfo.total})`} key="1">
-            <Table 
-              columns={structureColumns} 
-              dataSource={structureDiffs} 
-              rowKey="id" 
+            <Table
+              columns={structureColumns}
+              dataSource={structureDiffs}
+              rowKey="id"
               pagination={false}
               locale={{ emptyText: '无结构差异' }}
             />
@@ -220,16 +231,16 @@ const Result: React.FC = () => {
                   pageSize={structurePageInfo.page_size}
                   total={structurePageInfo.total}
                   showSizeChanger
-                  onChange={(page, pageSize) => fetchStructureDiffs(page, pageSize)}
+                  onChange={(page, page_size) => fetchStructureDiffs(page, page_size)}
                 />
               </div>
             )}
           </Tabs.TabPane>
           <Tabs.TabPane tab={`数据差异 (${dataPageInfo.total})`} key="2">
-            <Table 
-              columns={dataColumns} 
-              dataSource={dataDiffs} 
-              rowKey="id" 
+            <Table
+              columns={dataColumns}
+              dataSource={dataDiffs}
+              rowKey="id"
               pagination={false}
               locale={{ emptyText: '无数据差异' }}
             />
@@ -240,7 +251,7 @@ const Result: React.FC = () => {
                   pageSize={dataPageInfo.page_size}
                   total={dataPageInfo.total}
                   showSizeChanger
-                  onChange={(page, pageSize) => fetchDataDiffs(page, pageSize)}
+                  onChange={(page, page_size) => fetchDataDiffs(page, page_size)}
                 />
               </div>
             )}

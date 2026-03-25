@@ -30,7 +30,7 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
   useEffect(() => {
     if (visible && editingId) {
       dataSourceApi.getById(editingId).then((res) => {
-        form.setFieldsValue(res.data);
+        form.setFieldsValue(res.data?.data || {});
       }).catch(() => {
         // Handle mock data
         import('@/stores/dataSourceStore').then(({ useDataSourceStore }) => {
@@ -43,8 +43,8 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
     }
   }, [visible, editingId, form]);
 
-  const handleDbTypeChange = (dbType: DatabaseType) => {
-    const option = DB_TYPE_OPTIONS.find((o) => o.value === dbType);
+  const handleDbTypeChange = (db_type: DatabaseType) => {
+    const option = DB_TYPE_OPTIONS.find((o) => o.value === db_type);
     if (option) {
       form.setFieldValue('port', option.defaultPort);
     }
@@ -56,10 +56,10 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
       setTesting(true);
       try {
         const result = await dataSourceApi.testConnectionDirect(values);
-        if (result.data.success) {
-          message.success(`连接成功！数据库版本: ${result.data.version}`);
+        if (result.data?.data?.success) {
+          message.success(`连接成功！数据库版本: ${result.data.data.version}`);
         } else {
-          message.error(`连接失败: ${result.data.message}`);
+          message.error(`连接失败: ${result.data?.data?.message || '未知错误'}`);
         }
       } catch (e) {
         message.success(`Mock连接成功！`);
@@ -123,7 +123,7 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
         </Form.Item>
 
         <Form.Item
-          name="dbType"
+          name="db_type"
           label="数据库类型"
           rules={[{ required: true, message: '请选择数据库类型' }]}
         >

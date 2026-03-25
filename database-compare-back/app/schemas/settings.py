@@ -114,10 +114,13 @@ class ExportConfigRequest(BaseModel):
     include_datasources: bool = True
     include_templates: bool = True
     include_rules: bool = True
+    include_system_settings: bool = True
 
 
 class ImportConfigResponse(BaseModel):
     """导入配置响应"""
+    datasource_groups_imported: int = 0
     datasources_imported: int = 0
     templates_imported: int = 0
     rules_imported: int = 0
+    system_settings_imported: int = 0

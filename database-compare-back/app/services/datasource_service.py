@@ -99,19 +99,20 @@ class DataSourceService:
     
     def create(self, data: CreateDataSourceRequest) -> DataSourceResponse:
         """创建数据源"""
+        payload = data.model_dump(exclude_unset=True)
         ds = DataSource(
             id=str(uuid.uuid4()),
-            name=data.name,
-            group_id=data.group_id,
-            db_type=data.db_type,
-            host=data.host,
-            port=data.port,
-            database=data.database,
-            schema=data.schema,
-            username=data.username,
-            password_encrypted=encrypt(data.password),
-            charset=data.charset,
-            timeout=data.timeout
+            name=payload["name"],
+            group_id=payload.get("group_id"),
+            db_type=payload["db_type"],
+            host=payload["host"],
+            port=payload["port"],
+            database=payload["database"],
+            schema=payload.get("schema"),
+            username=payload["username"],
+            password_encrypted=encrypt(payload["password"]),
+            charset=payload.get("charset", "UTF-8"),
+            timeout=payload.get("timeout", 30)
         )
         
         self.db.add(ds)
@@ -174,16 +175,17 @@ class DataSourceService:
     
     def test_connection_direct(self, data: TestConnectionRequest) -> TestConnectionResult:
         """直接测试连接（不保存）"""
+        payload = data.model_dump(exclude_unset=True)
         return self._test_connection(
-            db_type=data.db_type,
-            host=data.host,
-            port=data.port,
-            database=data.database,
-            schema=data.schema,
-            username=data.username,
-            password=data.password,
-            charset=data.charset,
-            timeout=data.timeout
+            db_type=payload["db_type"],
+            host=payload["host"],
+            port=payload["port"],
+            database=payload["database"],
+            schema=payload.get("schema"),
+            username=payload["username"],
+            password=payload["password"],
+            charset=payload.get("charset", "UTF-8"),
+            timeout=payload.get("timeout", 30)
         )
     
     def _test_connection(self, **kwargs) -> TestConnectionResult:
@@ -203,7 +205,7 @@ class DataSourceService:
                 message=f"连接失败: {str(e)}"
             )
     
-    def get_tables(self, ds_id: str, schema: str = None) -> List[TableInfo]:
+    def get_tables(self, ds_id: str, schema: str = None, keyword: str = None) -> List[TableInfo]:
         """获取表列表"""
         ds = self.db.query(DataSource).filter(DataSource.id == ds_id).first()
         if not ds:
@@ -224,6 +226,9 @@ class DataSourceService:
             
             with connector:
                 tables = connector.get_tables()
+                if keyword:
+                    keyword_lower = keyword.lower()
+                    tables = [t for t in tables if keyword_lower in t.name.lower()]
                 return [TableInfo(
                     name=t.name,
                     schema=t.schema,

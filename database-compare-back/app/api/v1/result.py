@@ -79,13 +79,12 @@ async def export_result(
     service: ResultService = Depends(get_service)
 ):
     """导出比对报告"""
-    # TODO: 实现导出功能
-    return Response(
-        message="导出成功",
-        data={
-            "file_path": f"/data/exports/report_{result_id}.xlsx",
-            "file_name": f"比对报告_{result_id}.xlsx",
-            "file_size": 0,
-            "download_url": f"/api/v1/files/download/report_{result_id}.xlsx"
-        }
-    )
+    try:
+        data = service.export_result(
+            result_id=result_id,
+            export_format=request.format,
+            options=request.options.model_dump() if request.options else {}
+        )
+        return Response(message="导出成功", data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

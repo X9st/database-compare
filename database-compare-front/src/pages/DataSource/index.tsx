@@ -14,7 +14,7 @@ const DataSource: React.FC = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
 
   useEffect(() => {
-    fetchDataSources();
+    fetchDataSources().catch(() => {});
   }, [fetchDataSources]);
 
   const handleAdd = () => {
@@ -77,7 +77,6 @@ const DataSource: React.FC = () => {
         onClose={() => setFormVisible(false)}
         onSuccess={() => {
           setFormVisible(false);
-          fetchDataSources();
         }}
       />
     </div>

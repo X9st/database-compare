@@ -1,5 +1,6 @@
 """设置API"""
-from fastapi import APIRouter, Depends, HTTPException
+import json
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -139,12 +140,14 @@ async def create_task_from_template(
     service: SettingsService = Depends(get_service)
 ):
     """从模板创建任务"""
-    template = service.get_template(template_id)
-    if not template:
-        raise HTTPException(status_code=404, detail="模板不存在")
-    
-    # TODO: 实现从模板创建任务
-    return Response(message="功能开发中")
+    try:
+        data = service.create_task_from_template(template_id, request.override)
+        return Response(message="任务创建成功", data=data)
+    except ValueError as e:
+        detail = str(e)
+        if "模板不存在" in detail:
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
 
 
 # ==================== 系统设置 ====================
@@ -176,20 +179,24 @@ async def export_config(
     service: SettingsService = Depends(get_service)
 ):
     """导出配置"""
-    # TODO: 实现配置导出
-    return Response(
-        message="导出成功",
-        data={
-            "file_path": "/data/exports/config.enc",
-            "download_url": "/api/v1/files/download/config.enc"
-        }
-    )
+    data = service.export_config(request)
+    return Response(message="导出成功", data=data)
 
 
 @router.post("/import")
 async def import_config(
+    config_file: UploadFile = File(...),
     service: SettingsService = Depends(get_service)
 ):
     """导入配置"""
-    # TODO: 实现配置导入
-    return Response(message="功能开发中")
+    try:
+        content = await config_file.read()
+        payload = json.loads(content.decode("utf-8"))
+        data = service.import_config(payload)
+        return Response(message="导入成功", data=data)
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="配置文件必须是 UTF-8 编码的 JSON")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="配置文件不是合法 JSON")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

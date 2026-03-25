@@ -1,5 +1,6 @@
 """应用配置"""
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
 import os
 
@@ -31,7 +32,25 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     
     # CORS配置
-    CORS_ORIGINS: list = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    CORS_ORIGINS: list = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "null"
+    ]
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def normalize_debug_value(cls, value):
+        """兼容 DEBUG=release/prod 等环境值，避免运行期崩溃"""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "debug"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "release", "prod", "production", ""}:
+                return False
+        raise ValueError("DEBUG 必须是布尔值或可识别的布尔字符串")
     
     class Config:
         env_file = ".env"

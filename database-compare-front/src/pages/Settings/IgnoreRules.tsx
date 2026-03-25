@@ -53,7 +53,7 @@ const IgnoreRules: React.FC = () => {
       setSubmitting(true);
       await settingsApi.createIgnoreRule({
         name: values.name,
-        rule_type: values.ruleType,
+        rule_type: values.rule_type,
         pattern: values.pattern,
         enabled: true,
       });
@@ -86,7 +86,7 @@ const IgnoreRules: React.FC = () => {
     },
     { 
       title: '规则类型', 
-      dataIndex: 'ruleType', 
+      dataIndex: 'rule_type', 
       width: 120,
       render: (t: string) => getRuleTypeText(t),
     },
@@ -150,7 +150,7 @@ const IgnoreRules: React.FC = () => {
             <Input placeholder="例如: 忽略临时表" />
           </Form.Item>
           <Form.Item 
-            name="ruleType" 
+            name="rule_type" 
             label="规则类型" 
             rules={[{ required: true, message: '请选择规则类型' }]}
           >

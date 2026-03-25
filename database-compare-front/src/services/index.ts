@@ -1,7 +1,7 @@
 // API 服务统一导出
 export { default as api } from './api';
 export { dataSourceApi, type DataSourceGroup, type CreateGroupDto } from './dataSourceApi';
-export { compareApi, type TaskProgress, type TaskCreated } from './compareApi';
+export { compareApi, type TaskStatusResponse, type TaskCreated } from './compareApi';
 export { 
   resultApi, 
   type CompareResultSummary, 

@@ -1,29 +1,32 @@
 import api from './api';
 import { CompareTaskConfig, ApiResponse } from '@/types';
 
-// 任务进度
-export interface TaskProgress {
-  taskId: string;
+export interface TaskStatusResponse {
+  task_id: string;
   status: 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
-  progress: number;
-  currentTable?: string;
-  totalTables: number;
-  completedTables: number;
-  startedAt?: string;
-  elapsedTime?: string;
-  estimatedRemaining?: string;
-  errorMessage?: string;
+  progress: {
+    total_tables: number;
+    completed_tables: number;
+    current_table?: string;
+    current_phase?: 'structure' | 'data';
+    percentage: number;
+    start_time?: string;
+    elapsed_seconds: number;
+    estimated_remaining_seconds?: number;
+  };
+  error_message?: string;
+  result_id?: string;
 }
 
-// 任务创建响应
 export interface TaskCreated {
-  taskId: string;
+  task_id: string;
   status: string;
+  created_at?: string;
 }
 
 export const compareApi = {
   // 创建并启动比对任务
-  startTask: (config: CompareTaskConfig) => 
+  startTask: (config: CompareTaskConfig) =>
     api.post<ApiResponse<TaskCreated>>('/compare/start', config),
 
   // 创建任务（不启动）
@@ -31,26 +34,26 @@ export const compareApi = {
     api.post<ApiResponse<TaskCreated>>('/compare/tasks', config),
 
   // 启动已创建的任务
-  startCreatedTask: (taskId: string) =>
-    api.post<ApiResponse<TaskCreated>>(`/compare/tasks/${taskId}/start`),
+  startCreatedTask: (task_id: string) =>
+    api.post<ApiResponse<TaskCreated>>(`/compare/tasks/${task_id}/start`),
 
   // 暂停任务
-  pauseTask: (taskId: string) => 
-    api.post<ApiResponse<null>>(`/compare/${taskId}/pause`),
+  pauseTask: (task_id: string) =>
+    api.post<ApiResponse<null>>(`/compare/${task_id}/pause`),
 
   // 恢复任务
-  resumeTask: (taskId: string) => 
-    api.post<ApiResponse<null>>(`/compare/${taskId}/resume`),
+  resumeTask: (task_id: string) =>
+    api.post<ApiResponse<null>>(`/compare/${task_id}/resume`),
 
   // 停止任务
-  stopTask: (taskId: string) => 
-    api.post<ApiResponse<null>>(`/compare/${taskId}/stop`),
+  stopTask: (task_id: string) =>
+    api.post<ApiResponse<null>>(`/compare/${task_id}/stop`),
 
   // 取消任务
-  cancelTask: (taskId: string) =>
-    api.post<ApiResponse<null>>(`/compare/tasks/${taskId}/cancel`),
+  cancelTask: (task_id: string) =>
+    api.post<ApiResponse<null>>(`/compare/tasks/${task_id}/cancel`),
 
   // 获取任务进度
-  getProgress: (taskId: string) =>
-    api.get<ApiResponse<TaskProgress>>(`/compare/tasks/${taskId}/progress`),
+  getProgress: (task_id: string) =>
+    api.get<ApiResponse<TaskStatusResponse>>(`/compare/tasks/${task_id}/progress`),
 };

@@ -1,6 +1,6 @@
 import { DataSource } from './dataSource';
 
-export type StructureDiffType = 
+export type StructureDiffType =
   | 'table_missing_in_target'
   | 'table_extra_in_target'
   | 'column_missing'
@@ -22,54 +22,54 @@ export type DataDiffType =
 
 export interface StructureDiffItem {
   id: string;
-  tableName: string;
-  diffType: StructureDiffType;
-  fieldName?: string;
-  sourceValue: string | null;
-  targetValue: string | null;
-  diffDetail: string;
+  table_name: string;
+  diff_type: StructureDiffType;
+  field_name?: string;
+  source_value: string | null;
+  target_value: string | null;
+  diff_detail: string;
 }
 
 export interface DataDiffItem {
   id: string;
-  tableName: string;
-  primaryKey: Record<string, any>;
-  diffType: DataDiffType;
-  diffColumns: string[];
-  sourceValues?: Record<string, any>;
-  targetValues?: Record<string, any>;
+  table_name: string;
+  primary_key: Record<string, any>;
+  diff_type: DataDiffType;
+  diff_columns: string[];
+  source_values?: Record<string, any>;
+  target_values?: Record<string, any>;
 }
 
 export interface TableCompareResult {
-  tableName: string;
-  structureMatch: boolean;
-  dataMatch: boolean;
-  sourceRowCount: number;
-  targetRowCount: number;
-  structureDiffs: StructureDiffItem[];
-  dataDiffs: DataDiffItem[];
-  compareTime: number;
+  table_name: string;
+  structure_match: boolean;
+  data_match: boolean;
+  source_row_count: number;
+  target_row_count: number;
+  structure_diffs: StructureDiffItem[];
+  data_diffs: DataDiffItem[];
+  compare_time_ms: number;
 }
 
 export interface CompareResultSummary {
-  totalTables: number;
-  structureMatchTables: number;
-  structureDiffTables: number;
-  dataMatchTables: number;
-  dataDiffTables: number;
-  totalStructureDiffs: number;
-  totalDataDiffs: number;
+  total_tables: number;
+  structure_match_tables: number;
+  structure_diff_tables: number;
+  data_match_tables: number;
+  data_diff_tables: number;
+  total_structure_diffs: number;
+  total_data_diffs: number;
 }
 
 export interface CompareResult {
-  taskId: string;
+  task_id: string;
   status: 'completed' | 'partial' | 'failed';
-  sourceDb: DataSource;
-  targetDb: DataSource;
-  startTime: string;
-  endTime: string;
-  duration: number;
+  source_db: DataSource;
+  target_db: DataSource;
+  start_time: string;
+  end_time: string;
+  duration_seconds: number;
   summary: CompareResultSummary;
-  tableResults: TableCompareResult[];
-  errorMessage?: string;
+  table_results: TableCompareResult[];
+  error_message?: string;
 }

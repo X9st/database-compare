@@ -1,12 +1,15 @@
 """比对任务相关Schema"""
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field
 from datetime import datetime
 
 
 class TableSelection(BaseModel):
     """表选择配置"""
-    mode: str = Field(..., description="选择模式：all/include/exclude")
+    mode: Literal["all", "include", "exclude", "mapping"] = Field(
+        ...,
+        description="选择模式：all/include/exclude/mapping"
+    )
     tables: Optional[List[str]] = Field(None, description="表名列表")
 
 
@@ -83,6 +86,7 @@ class TaskStatusResponse(BaseModel):
     status: str
     progress: Optional[TaskProgress] = None
     error_message: Optional[str] = None
+    result_id: Optional[str] = None
 
 
 class CreateTaskResponse(BaseModel):

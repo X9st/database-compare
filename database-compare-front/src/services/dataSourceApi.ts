@@ -1,17 +1,16 @@
 import api from './api';
-import { DataSource, CreateDataSourceDto, TestConnectionResult, ApiResponse } from '@/types';
+import { DataSource, CreateDataSourceDto, TestConnectionResult, ApiResponse, TableInfo } from '@/types';
 
 // 数据源分组
 export interface DataSourceGroup {
   id: string;
   name: string;
-  description?: string;
-  createdAt: string;
+  count: number;
+  sort_order: number;
 }
 
 export interface CreateGroupDto {
   name: string;
-  description?: string;
 }
 
 export const dataSourceApi = {
@@ -37,8 +36,8 @@ export const dataSourceApi = {
   testConnectionDirect: (data: CreateDataSourceDto) =>
     api.post<ApiResponse<TestConnectionResult>>(`/datasources/test`, data),
   
-  getTables: (id: string, schema?: string) => 
-    api.get<ApiResponse<string[]>>(`/datasources/${id}/tables`, { params: { schema } }),
+  getTables: (id: string, schema?: string, keyword?: string) => 
+    api.get<ApiResponse<TableInfo[]>>(`/datasources/${id}/tables`, { params: { schema, keyword } }),
   
   getTableSchema: (id: string, tableName: string) =>
     api.get<ApiResponse<any>>(`/datasources/${id}/tables/${tableName}/schema`),

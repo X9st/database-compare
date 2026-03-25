@@ -14,7 +14,7 @@ export const router = createHashRouter([
       { index: true, element: <Navigate to="/datasource" replace /> },
       { path: 'datasource', element: <DataSource /> },
       { path: 'compare', element: <Compare /> },
-      { path: 'result/:taskId', element: <Result /> },
+      { path: 'result/:result_id', element: <Result /> },
       { path: 'history', element: <History /> },
       { path: 'settings', element: <Settings /> },
     ],

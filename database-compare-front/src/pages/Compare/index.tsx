@@ -9,12 +9,32 @@ import styles from './index.module.less';
 
 const Compare: React.FC = () => {
   const [current, setCurrent] = useState(0);
-  const { currentTask, startCompare } = useCompareStore();
+  const { current_task, startCompare } = useCompareStore();
 
   const next = () => {
-    if (current === 0 && (!currentTask?.sourceId || !currentTask?.targetId)) {
+    if (current === 0 && (!current_task?.source_id || !current_task?.target_id)) {
       message.error('请选择源数据库和目标数据库');
       return;
+    }
+    if (current === 1) {
+      const tableSelection = current_task?.table_selection;
+      const mappings = current_task?.options?.table_mappings || [];
+
+      if (tableSelection?.mode === 'include' && (tableSelection.tables || []).length === 0) {
+        message.error('请至少选择一张要比对的表');
+        return;
+      }
+      if (tableSelection?.mode === 'mapping') {
+        if (mappings.length === 0) {
+          message.error('请至少配置一组表映射');
+          return;
+        }
+        const hasInvalidMapping = mappings.some((m) => !m.source_table || !m.target_table);
+        if (hasInvalidMapping) {
+          message.error('请完善每一组表映射的源表和目标表');
+          return;
+        }
+      }
     }
     setCurrent(current + 1);
   };

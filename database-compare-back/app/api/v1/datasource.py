@@ -113,11 +113,12 @@ async def test_connection_direct_alias(
 async def get_tables(
     ds_id: str,
     schema: Optional[str] = None,
+    keyword: Optional[str] = None,
     service: DataSourceService = Depends(get_service)
 ):
     """获取表列表"""
     try:
-        data = service.get_tables(ds_id, schema)
+        data = service.get_tables(ds_id, schema, keyword)
         return Response(data=data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

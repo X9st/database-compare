@@ -10,9 +10,9 @@ export interface ApiResponse<T> {
 export interface DataSource {
   id: string;
   name: string;
-  groupId?: string;
-  groupName?: string;
-  dbType: DatabaseType;
+  group_id?: string;
+  group_name?: string;
+  db_type: DatabaseType;
   host: string;
   port: number;
   database: string;
@@ -20,20 +20,21 @@ export interface DataSource {
   username: string;
   charset: string;
   timeout: number;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DataSourceGroup {
   id: string;
   name: string;
   count: number;
+  sort_order: number;
 }
 
 export interface CreateDataSourceDto {
   name: string;
-  groupId?: string;
-  dbType: DatabaseType;
+  group_id?: string;
+  db_type: DatabaseType;
   host: string;
   port: number;
   database: string;
@@ -49,4 +50,11 @@ export interface TestConnectionResult {
   message: string;
   latency?: number;
   version?: string;
+}
+
+export interface TableInfo {
+  name: string;
+  schema?: string;
+  comment?: string;
+  row_count?: number;
 }

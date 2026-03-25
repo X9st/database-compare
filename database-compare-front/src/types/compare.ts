@@ -1,4 +1,4 @@
-export type TableSelectionMode = 'all' | 'include' | 'exclude';
+export type TableSelectionMode = 'all' | 'include' | 'exclude' | 'mapping';
 export type CompareMode = 'full' | 'incremental';
 
 export interface TableSelection {
@@ -7,20 +7,20 @@ export interface TableSelection {
 }
 
 export interface TableMapping {
-  sourceTable: string;
-  targetTable: string;
-  columnMappings?: ColumnMapping[];
+  source_table: string;
+  target_table: string;
+  column_mappings?: ColumnMapping[];
 }
 
 export interface ColumnMapping {
-  sourceColumn: string;
-  targetColumn: string;
+  source_column: string;
+  target_column: string;
 }
 
 export interface IgnoreRule {
   id: string;
   name: string;
-  type: 'column' | 'dataType' | 'diffType' | 'table';
+  rule_type: 'column' | 'dataType' | 'diffType' | 'table';
   pattern: string;
   tables?: string[];
   enabled: boolean;
@@ -28,42 +28,42 @@ export interface IgnoreRule {
 
 export interface CompareOptions {
   mode: CompareMode;
-  incrementalConfig?: {
-    timeColumn: string;
-    startTime: string;
-    endTime?: string;
+  incremental_config?: {
+    time_column: string;
+    start_time: string;
+    end_time?: string;
   };
-  structureOptions: {
-    compareIndex: boolean;
-    compareConstraint: boolean;
-    compareComment: boolean;
+  structure_options: {
+    compare_index: boolean;
+    compare_constraint: boolean;
+    compare_comment: boolean;
   };
-  dataOptions: {
-    floatPrecision: number;
-    ignoreCase: boolean;
-    trimWhitespace: boolean;
-    dateTimePrecision: 'second' | 'millisecond';
-    skipLargeFields: boolean;
-    pageSize: number;
+  data_options: {
+    float_precision: number;
+    ignore_case: boolean;
+    trim_whitespace: boolean;
+    datetime_precision: 'second' | 'millisecond';
+    skip_large_fields: boolean;
+    page_size: number;
   };
-  tableMappings: TableMapping[];
-  ignoreRules: string[];
+  table_mappings: TableMapping[];
+  ignore_rules: string[];
 }
 
 export interface CompareTaskConfig {
-  sourceId: string;
-  targetId: string;
-  tableSelection: TableSelection;
+  source_id: string;
+  target_id: string;
+  table_selection: TableSelection;
   options: CompareOptions;
 }
 
 export interface CompareProgress {
-  totalTables: number;
-  completedTables: number;
-  currentTable: string;
-  currentPhase: 'structure' | 'data';
+  total_tables: number;
+  completed_tables: number;
+  current_table: string;
+  current_phase: 'structure' | 'data';
   percentage: number;
-  startTime: number;
-  elapsedTime: number;
-  estimatedRemaining?: number;
+  start_time: string;
+  elapsed_seconds: number;
+  estimated_remaining_seconds?: number;
 }

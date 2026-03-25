@@ -18,7 +18,7 @@ interface DataSourceState {
   deleteGroup: (id: string) => Promise<void>;
 }
 
-export const useDataSourceStore = create<DataSourceState>((set, get) => ({
+export const useDataSourceStore = create<DataSourceState>((set) => ({
   dataSources: [],  // 初始为空数组，从后端加载
   groups: [],
   loading: false,
@@ -33,41 +33,34 @@ export const useDataSourceStore = create<DataSourceState>((set, get) => ({
     } catch (e) {
       // API 请求失败时保持原有数据
       console.error('Failed to fetch datasources:', e);
+      throw e;
     } finally {
       set({ loading: false });
     }
   },
 
   addDataSource: async (data) => {
-    try {
-      await dataSourceApi.create(data);
-      await get().fetchDataSources();
-    } catch (e) {
-      // Mock fallback
+    const response = await dataSourceApi.create(data);
+    const created = response.data?.data;
+    if (created) {
       set((state) => ({
-        dataSources: [...state.dataSources, { ...data, id: Date.now().toString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as DataSource]
+        dataSources: [created, ...state.dataSources.filter((item) => item.id !== created.id)],
       }));
     }
   },
 
   updateDataSource: async (id, data) => {
-    try {
-      await dataSourceApi.update(id, data);
-      await get().fetchDataSources();
-    } catch (e) {
-      // Mock fallback
+    const response = await dataSourceApi.update(id, data);
+    const updated = response.data?.data;
+    if (updated) {
       set((state) => ({
-        dataSources: state.dataSources.map(ds => ds.id === id ? { ...ds, ...data } : ds)
+        dataSources: state.dataSources.map((ds) => (ds.id === id ? updated : ds))
       }));
     }
   },
 
   deleteDataSource: async (id) => {
-    try {
-      await dataSourceApi.delete(id);
-    } catch (e) {
-      // Mock fallback
-    }
+    await dataSourceApi.delete(id);
     set((state) => ({
       dataSources: state.dataSources.filter((ds) => ds.id !== id),
     }));
@@ -84,6 +77,6 @@ export const useDataSourceStore = create<DataSourceState>((set, get) => ({
   },
 
   fetchGroups: async () => {},
-  addGroup: async (name) => {},
-  deleteGroup: async (id) => {},
+  addGroup: async (_name) => {},
+  deleteGroup: async (_id) => {},
 }));

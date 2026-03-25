@@ -1,5 +1,5 @@
 """数据比对器"""
-from typing import List, Dict, Any, Optional, Generator
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 from decimal import Decimal
@@ -73,13 +73,33 @@ class DataComparator:
         target_table = target_table or table_name
         column_mapping = column_mapping or {}
         diffs = []
-        
-        # 获取需要比对的字段
+
+        # 仅比较双方都存在的字段，避免因结构差异导致目标库查询失败
         source_columns = self.source_conn.get_columns(table_name)
-        compare_columns = [
-            c.name for c in source_columns 
-            if not (self.skip_large_fields and c.data_type.lower() in self.large_field_types)
-        ]
+        target_columns = self.target_conn.get_columns(target_table)
+        target_column_map = {c.name.lower(): c.name for c in target_columns}
+
+        effective_mapping: Dict[str, str] = {}
+        compare_columns: List[str] = []
+        for source_col in source_columns:
+            if self.skip_large_fields and source_col.data_type.lower() in self.large_field_types:
+                continue
+
+            target_col = self._resolve_target_column(source_col.name, column_mapping, target_column_map)
+            if not target_col:
+                continue
+
+            compare_columns.append(source_col.name)
+            effective_mapping[source_col.name] = target_col
+
+        # 主键字段必须可映射，否则无法进行数据定位
+        for pk in primary_keys:
+            target_pk = self._resolve_target_column(pk, column_mapping, target_column_map)
+            if not target_pk:
+                raise ValueError(f"目标表 {target_table} 缺少主键字段 {pk}，无法进行数据比对")
+            effective_mapping[pk] = target_pk
+
+        source_fetch_columns = self._merge_columns(compare_columns + primary_keys)
         
         # 构建排序字段
         order_by = primary_keys.copy()
@@ -88,7 +108,7 @@ class DataComparator:
         while len(diffs) < max_diffs:
             # 分页获取源数据
             source_data = self.source_conn.fetch_data(
-                table_name, compare_columns, where_clause, order_by, offset, self.page_size
+                table_name, source_fetch_columns, where_clause, order_by, offset, self.page_size
             )
             
             if not source_data:
@@ -97,10 +117,12 @@ class DataComparator:
             # 获取对应的目标数据
             pk_values = [self._extract_pk(row, primary_keys) for row in source_data]
             target_data = self._fetch_target_by_pks(
-                target_table, pk_values, primary_keys, compare_columns, column_mapping
+                target_table, pk_values, primary_keys, source_fetch_columns, effective_mapping
             )
-            target_map = {self._pk_to_key(self._extract_pk(row, primary_keys)): row 
-                          for row in target_data}
+            target_map = {
+                self._pk_to_key(self._extract_pk_with_mapping(row, primary_keys, effective_mapping)): row
+                for row in target_data
+            }
             
             # 比对每一行
             for source_row in source_data:
@@ -125,14 +147,14 @@ class DataComparator:
                     diff_columns = []
                     
                     for col in compare_columns:
-                        target_col = column_mapping.get(col, col)
+                        target_col = effective_mapping.get(col, col)
                         if not self._values_equal(source_row.get(col), target_row.get(target_col)):
                             diff_columns.append(col)
                     
                     if diff_columns:
                         # 判断是否为空值差异
                         is_null_diff = any(
-                            (source_row.get(c) is None) != (target_row.get(column_mapping.get(c, c)) is None)
+                            (source_row.get(c) is None) != (target_row.get(effective_mapping.get(c, c)) is None)
                             for c in diff_columns
                         )
                         diffs.append(DataDiff(
@@ -141,7 +163,7 @@ class DataComparator:
                             diff_type=DataDiffType.NULL_DIFF if is_null_diff else DataDiffType.VALUE_DIFF,
                             diff_columns=diff_columns,
                             source_values={c: self._serialize_value(source_row.get(c)) for c in diff_columns},
-                            target_values={c: self._serialize_value(target_row.get(column_mapping.get(c, c))) for c in diff_columns}
+                            target_values={c: self._serialize_value(target_row.get(effective_mapping.get(c, c))) for c in diff_columns}
                         ))
             
             offset += self.page_size
@@ -186,6 +208,11 @@ class DataComparator:
     def _extract_pk(self, row: Dict[str, Any], pk_columns: List[str]) -> Dict[str, Any]:
         """提取主键值"""
         return {col: row.get(col) for col in pk_columns}
+
+    def _extract_pk_with_mapping(self, row: Dict[str, Any], pk_columns: List[str],
+                                 column_mapping: Dict[str, str]) -> Dict[str, Any]:
+        """提取并统一主键值（按源主键名返回）"""
+        return {col: row.get(column_mapping.get(col, col)) for col in pk_columns}
     
     def _pk_to_key(self, pk: Dict[str, Any]) -> str:
         """主键转为字符串key"""
@@ -206,6 +233,38 @@ class DataComparator:
     def _serialize_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """序列化整行数据"""
         return {k: self._serialize_value(v) for k, v in row.items()}
+
+    def _resolve_target_column(self, source_column: str,
+                               column_mapping: Dict[str, str],
+                               target_column_map: Dict[str, str]) -> Optional[str]:
+        """解析源字段对应的目标字段（支持大小写不敏感匹配）"""
+        mapped = column_mapping.get(source_column, source_column)
+        return target_column_map.get(str(mapped).lower())
+
+    def _merge_columns(self, columns: List[str]) -> List[str]:
+        """按出现顺序去重字段（大小写不敏感）"""
+        merged: List[str] = []
+        seen = set()
+        for col in columns:
+            key = col.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(col)
+        return merged
+
+    def _format_sql_literal(self, value: Any) -> str:
+        """格式化SQL字面量"""
+        if value is None:
+            return "NULL"
+        if isinstance(value, str):
+            escaped = value.replace("'", "''")
+            return f"'{escaped}'"
+        if isinstance(value, datetime):
+            return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+        if isinstance(value, bytes):
+            return f"'{value.hex()}'"
+        return str(value)
     
     def _fetch_target_by_pks(self, table_name: str, pk_values: List[Dict],
                              pk_columns: List[str], columns: List[str],
@@ -213,31 +272,44 @@ class DataComparator:
         """根据主键批量获取目标数据"""
         if not pk_values:
             return []
+
+        target_pk_columns = [column_mapping.get(col, col) for col in pk_columns]
         
         # 构建IN查询条件
         if len(pk_columns) == 1:
-            col = pk_columns[0]
-            values = [pk[col] for pk in pk_values]
-            # 处理不同类型的值
-            formatted_values = []
-            for v in values:
-                if isinstance(v, str):
-                    formatted_values.append(f"'{v}'")
-                else:
-                    formatted_values.append(str(v))
-            where = f"{col} IN ({','.join(formatted_values)})"
+            source_pk = pk_columns[0]
+            target_pk = target_pk_columns[0]
+            values = [pk[source_pk] for pk in pk_values]
+            non_null_values = [v for v in values if v is not None]
+
+            clauses = []
+            if non_null_values:
+                formatted_values = [self._format_sql_literal(v) for v in non_null_values]
+                clauses.append(f"{target_pk} IN ({','.join(formatted_values)})")
+            if any(v is None for v in values):
+                clauses.append(f"{target_pk} IS NULL")
+
+            if not clauses:
+                return []
+            where = " OR ".join(clauses)
         else:
             # 复合主键
             conditions = []
             for pk in pk_values:
                 cond_parts = []
-                for k, v in pk.items():
-                    if isinstance(v, str):
-                        cond_parts.append(f"{k} = '{v}'")
+                for source_pk, target_pk in zip(pk_columns, target_pk_columns):
+                    v = pk.get(source_pk)
+                    if v is None:
+                        cond_parts.append(f"{target_pk} IS NULL")
                     else:
-                        cond_parts.append(f"{k} = {v}")
+                        cond_parts.append(f"{target_pk} = {self._format_sql_literal(v)}")
                 conditions.append(f"({' AND '.join(cond_parts)})")
             where = ' OR '.join(conditions)
         
         target_columns = [column_mapping.get(c, c) for c in columns]
-        return self.target_conn.fetch_data(table_name, target_columns, where)
+        return self.target_conn.fetch_data(
+            table_name,
+            self._merge_columns(target_columns),
+            where,
+            limit=max(len(pk_values), 1)
+        )

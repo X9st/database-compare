@@ -100,7 +100,7 @@ async def start_compare(
         # 启动任务
         await service.start_task(task_id)
         
-        return Response(message="比对任务已启动", data={"taskId": task_id})
+        return Response(message="比对任务已启动", data={"task_id": task_id})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

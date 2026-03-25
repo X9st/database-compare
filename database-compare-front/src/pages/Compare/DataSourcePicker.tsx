@@ -5,7 +5,7 @@ import { useCompareStore } from '@/stores/compareStore';
 
 const DataSourcePicker: React.FC = () => {
   const { dataSources, fetchDataSources } = useDataSourceStore();
-  const { currentTask, setSourceDb, setTargetDb } = useCompareStore();
+  const { current_task, setSourceDb, setTargetDb } = useCompareStore();
 
   useEffect(() => {
     fetchDataSources();
@@ -21,7 +21,7 @@ const DataSourcePicker: React.FC = () => {
             style={{ width: '100%' }}
             placeholder="请选择源数据库"
             options={options}
-            value={currentTask?.sourceId || undefined}
+            value={current_task?.source_id || undefined}
             onChange={setSourceDb}
           />
         </Card>
@@ -32,7 +32,7 @@ const DataSourcePicker: React.FC = () => {
             style={{ width: '100%' }}
             placeholder="请选择目标数据库"
             options={options}
-            value={currentTask?.targetId || undefined}
+            value={current_task?.target_id || undefined}
             onChange={setTargetDb}
           />
         </Card>

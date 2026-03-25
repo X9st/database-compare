@@ -60,27 +60,11 @@ async def websocket_task_progress(websocket: WebSocket, task_id: str):
     
     async def send_progress(task: CompareTask):
         """发送进度消息"""
-        if task.status.value == "completed":
-            message = {
-                "type": "completed",
-                "data": {
-                    "task_id": task.id,
-                    "result_id": task.result_id
-                }
-            }
-        elif task.status.value == "failed":
-            message = {
-                "type": "failed",
-                "data": {
-                    "task_id": task.id,
-                    "error_message": task.error_message
-                }
-            }
-        else:
-            message = {
-                "type": "progress",
-                "data": task.to_dict()
-            }
+        # 与轮询接口保持一致：统一返回 task.to_dict 结构
+        message = {
+            "type": "task_progress",
+            "data": task.to_dict()
+        }
         
         await manager.broadcast(task_id, message)
     

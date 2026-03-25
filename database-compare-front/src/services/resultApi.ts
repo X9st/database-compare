@@ -1,53 +1,65 @@
 import api from './api';
 import { ApiResponse } from '@/types';
 
-// 比对结果汇总
 export interface CompareResultSummary {
-  id: string;
-  taskId: string;
-  totalTables: number;
-  structureSameCount: number;
-  structureDiffCount: number;
-  dataSameCount: number;
-  dataDiffCount: number;
-  elapsedTime: string;
-  createdAt: string;
+  result_id: string;
+  task_id: string;
+  status: string;
+  source_db: {
+    id: string;
+    name: string;
+    db_type: string;
+  };
+  target_db: {
+    id: string;
+    name: string;
+    db_type: string;
+  };
+  start_time: string;
+  end_time?: string;
+  duration_seconds?: number;
+  summary: {
+    total_tables: number;
+    structure_match_tables: number;
+    structure_diff_tables: number;
+    data_match_tables: number;
+    data_diff_tables: number;
+    total_structure_diffs: number;
+    total_data_diffs: number;
+  };
 }
 
-// 结构差异
 export interface StructureDiff {
   id: string;
-  tableName: string;
-  diffType: string;
-  fieldName?: string;
-  sourceValue?: string;
-  targetValue?: string;
-  diffDetail: string;
+  table_name: string;
+  diff_type: string;
+  field_name?: string;
+  source_value?: string;
+  target_value?: string;
+  diff_detail?: string;
 }
 
-// 数据差异
 export interface DataDiff {
   id: string;
-  tableName: string;
-  primaryKey: Record<string, any>;
-  diffType: string;
-  diffColumns: string[];
-  sourceValues?: Record<string, any>;
-  targetValues?: Record<string, any>;
+  table_name: string;
+  primary_key: Record<string, any>;
+  diff_type: string;
+  diff_columns: string[];
+  source_values?: Record<string, any>;
+  target_values?: Record<string, any>;
 }
 
-// 单表详情
 export interface TableCompareDetail {
-  tableName: string;
-  structureStatus: 'same' | 'diff';
-  dataStatus: 'same' | 'diff';
-  structureDiffs: StructureDiff[];
-  dataDiffCount: number;
-  sourceRowCount: number;
-  targetRowCount: number;
+  table_name: string;
+  structure_match: boolean;
+  data_match: boolean;
+  source_row_count: number;
+  target_row_count: number;
+  structure_diffs_count: number;
+  data_diffs_count: number;
+  compare_time_ms: number;
 }
 
-// 分页响应
 export interface PageInfo {
   page: number;
   page_size: number;
@@ -62,47 +74,47 @@ export interface PageResponse<T> {
   page_info: PageInfo;
 }
 
-// 导出请求
 export interface ExportRequest {
   format: 'excel' | 'html' | 'txt';
-  includeSummary?: boolean;
-  includeStructureDiff?: boolean;
-  includeDataDiff?: boolean;
-  tables?: string[];
+  options?: {
+    include_structure_diffs?: boolean;
+    include_data_diffs?: boolean;
+    max_data_diffs?: number;
+    tables?: string[];
+  };
 }
 
-// 导出响应
 export interface ExportResult {
-  filePath: string;
-  fileName: string;
-  fileSize: number;
-  downloadUrl: string;
+  file_path: string;
+  file_name: string;
+  file_size: number;
+  download_url: string;
 }
 
 export const resultApi = {
   // 获取比对结果汇总
-  getResult: (resultId: string) =>
-    api.get<ApiResponse<CompareResultSummary>>(`/compare/results/${resultId}`),
+  getResult: (result_id: string) =>
+    api.get<ApiResponse<CompareResultSummary>>(`/compare/results/${result_id}`),
 
   // 获取结构差异列表（分页）
   getStructureDiffs: (
-    resultId: string,
+    result_id: string,
     params?: { table_name?: string; diff_type?: string; page?: number; page_size?: number }
   ) =>
-    api.get<PageResponse<StructureDiff>>(`/compare/results/${resultId}/structure-diffs`, { params }),
+    api.get<PageResponse<StructureDiff>>(`/compare/results/${result_id}/structure-diffs`, { params }),
 
   // 获取数据差异列表（分页）
   getDataDiffs: (
-    resultId: string,
+    result_id: string,
     params?: { table_name?: string; diff_type?: string; page?: number; page_size?: number }
   ) =>
-    api.get<PageResponse<DataDiff>>(`/compare/results/${resultId}/data-diffs`, { params }),
+    api.get<PageResponse<DataDiff>>(`/compare/results/${result_id}/data-diffs`, { params }),
 
   // 获取单表比对详情
-  getTableDetail: (resultId: string, tableName: string) =>
-    api.get<ApiResponse<TableCompareDetail>>(`/compare/results/${resultId}/tables/${tableName}`),
+  getTableDetail: (result_id: string, table_name: string) =>
+    api.get<ApiResponse<TableCompareDetail>>(`/compare/results/${result_id}/tables/${table_name}`),
 
   // 导出比对报告
-  exportReport: (resultId: string, request: ExportRequest) =>
-    api.post<ApiResponse<ExportResult>>(`/compare/results/${resultId}/export`, request),
+  exportReport: (result_id: string, request: ExportRequest) =>
+    api.post<ApiResponse<ExportResult>>(`/compare/results/${result_id}/export`, request),
 };

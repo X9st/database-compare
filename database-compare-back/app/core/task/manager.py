@@ -75,14 +75,22 @@ class TaskManager:
             cls._instance._pause_events: Dict[str, asyncio.Event] = {}
         return cls._instance
     
-    def create_task(self) -> CompareTask:
-        """创建任务"""
-        task = CompareTask()
+    def create_task(self, task_id: Optional[str] = None) -> CompareTask:
+        """创建任务，可指定固定任务ID"""
+        effective_task_id = task_id or str(uuid.uuid4())
+        task = CompareTask(id=effective_task_id)
         self._tasks[task.id] = task
         self._cancel_events[task.id] = asyncio.Event()
         self._pause_events[task.id] = asyncio.Event()
         self._pause_events[task.id].set()  # 初始不暂停
         return task
+
+    def ensure_task(self, task_id: str) -> CompareTask:
+        """确保任务在内存中存在"""
+        task = self._tasks.get(task_id)
+        if task:
+            return task
+        return self.create_task(task_id=task_id)
     
     def get_task(self, task_id: str) -> Optional[CompareTask]:
         """获取任务"""
@@ -193,6 +201,8 @@ class TaskManager:
     
     def cleanup_task(self, task_id: str) -> None:
         """清理任务资源"""
+        if task_id in self._tasks:
+            del self._tasks[task_id]
         if task_id in self._cancel_events:
             del self._cancel_events[task_id]
         if task_id in self._pause_events:

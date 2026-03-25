@@ -2,15 +2,25 @@ import api from './api';
 import { ApiResponse } from '@/types';
 
 export interface HistoryItem {
-  id: string;
-  sourceId: string;
-  sourceName?: string;
-  targetId: string;
-  targetName?: string;
+  task_id: string;
+  result_id?: string;
+  source_db: {
+    id: string;
+    name: string;
+    db_type: string;
+  };
+  target_db: {
+    id: string;
+    name: string;
+    db_type: string;
+  };
   status: string;
-  startedAt: string;
-  completedAt?: string;
-  errorMessage?: string;
+  table_count: number;
+  has_diff: boolean;
+  structure_diffs_count: number;
+  data_diffs_count: number;
+  created_at: string;
+  duration_seconds?: number;
 }
 
 export interface PageInfo {
@@ -39,15 +49,15 @@ export interface HistoryQuery {
 }
 
 export const historyApi = {
-  getList: (params?: HistoryQuery) => 
+  getList: (params?: HistoryQuery) =>
     api.get<PageResponse<HistoryItem>>('/history', { params }),
-  
-  delete: (taskId: string) => 
-    api.delete<ApiResponse<null>>(`/history/${taskId}`),
-  
-  batchDelete: (taskIds: string[]) =>
-    api.post<ApiResponse<{ deleted: number }>>('/history/batch-delete', { task_ids: taskIds }),
-  
-  cleanup: (beforeDate?: string, keepCount?: number) =>
-    api.post<ApiResponse<{ deleted: number }>>('/history/cleanup', { before_date: beforeDate, keep_count: keepCount }),
+
+  delete: (task_id: string) =>
+    api.delete<ApiResponse<null>>(`/history/${task_id}`),
+
+  batchDelete: (task_ids: string[]) =>
+    api.post<ApiResponse<{ deleted: number }>>('/history/batch-delete', { task_ids }),
+
+  cleanup: (before_date?: string, keep_count?: number) =>
+    api.post<ApiResponse<{ deleted: number }>>('/history/cleanup', { before_date, keep_count }),
 };
