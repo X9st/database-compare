@@ -59,10 +59,10 @@ class DMConnector(BaseConnector):
         schema = self.schema or self.username.upper()
         sql = """
             SELECT 
-                TABLE_NAME as name,
-                OWNER as schema_name,
-                COMMENTS as comments,
-                NUM_ROWS as row_count
+                t.TABLE_NAME as name,
+                t.OWNER as schema_name,
+                tc.COMMENTS as comments,
+                t.NUM_ROWS as row_count
             FROM ALL_TABLES t
             LEFT JOIN ALL_TAB_COMMENTS tc ON t.OWNER = tc.OWNER AND t.TABLE_NAME = tc.TABLE_NAME
             WHERE t.OWNER = ?

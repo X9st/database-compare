@@ -1,0 +1,27 @@
+services:
+  dm:
+    profiles: ["enterprise"]
+    image: ${DM_IMAGE}
+    container_name: dbcmp-dm
+    restart: unless-stopped
+    ports:
+      - "${DM_PORT:-35236}:5236"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      DM_SYS_PASSWORD: ${DM_SYS_PASSWORD:-Dm_123456}
+    volumes:
+      - ./dm/init:/init:ro
+
+  inceptor:
+    profiles: ["enterprise"]
+    image: ${INCEPTOR_IMAGE}
+    container_name: dbcmp-inceptor
+    restart: unless-stopped
+    ports:
+      - "${INCEPTOR_PORT:-31000}:10000"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      INCEPTOR_USERNAME: ${INCEPTOR_USERNAME:-hive}
+      INCEPTOR_PASSWORD: ${INCEPTOR_PASSWORD:-}
+    volumes:
+      - ./inceptor/init:/init:ro
