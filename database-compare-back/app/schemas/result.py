@@ -18,8 +18,11 @@ class ResultSummary(BaseModel):
     structure_diff_tables: int
     data_match_tables: int
     data_diff_tables: int
+    no_diff_tables: int = 0
     total_structure_diffs: int
     total_data_diffs: int
+    structure_diff_type_counts: Dict[str, int] = Field(default_factory=dict)
+    data_diff_type_counts: Dict[str, int] = Field(default_factory=dict)
 
 
 class CompareResultResponse(BaseModel):
@@ -89,3 +92,43 @@ class ExportResponse(BaseModel):
     file_name: str
     file_size: int
     download_url: str
+
+
+class ResultCompareRequest(BaseModel):
+    """结果对比请求"""
+    baseline_result_id: str
+    current_result_id: str
+
+
+class ResultCompareExportRequest(ResultCompareRequest):
+    """结果对比导出请求"""
+    format: str = Field("txt", description="导出格式：txt/html/excel")
+
+
+class DiffCompareGroup(BaseModel):
+    """差异分组"""
+    structure: List[StructureDiffItem] = Field(default_factory=list)
+    data: List[DataDiffItem] = Field(default_factory=list)
+
+
+class ResultCompareSummary(BaseModel):
+    """结果对比汇总"""
+    added: int = 0
+    resolved: int = 0
+    unchanged: int = 0
+    added_structure: int = 0
+    added_data: int = 0
+    resolved_structure: int = 0
+    resolved_data: int = 0
+    unchanged_structure: int = 0
+    unchanged_data: int = 0
+
+
+class ResultCompareResponse(BaseModel):
+    """结果对比响应"""
+    baseline_result_id: str
+    current_result_id: str
+    summary: ResultCompareSummary
+    added: DiffCompareGroup
+    resolved: DiffCompareGroup
+    unchanged: DiffCompareGroup

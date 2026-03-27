@@ -3,6 +3,7 @@ import { Modal, Form, Input, Select, InputNumber, Button, Space, message } from 
 import { EyeInvisibleOutlined, EyeTwoTone } from '@ant-design/icons';
 import { dataSourceApi } from '@/services/dataSourceApi';
 import { DatabaseType } from '@/types';
+import { useDataSourceStore } from '@/stores/dataSourceStore';
 
 const DB_TYPE_OPTIONS = [
   { label: 'MySQL', value: 'mysql', defaultPort: 3306 },
@@ -24,19 +25,23 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
+  const { groups, fetchGroups } = useDataSourceStore();
 
   const isEdit = !!editingId;
+
+  useEffect(() => {
+    if (visible) {
+      fetchGroups().catch(() => {});
+    }
+  }, [visible, fetchGroups]);
 
   useEffect(() => {
     if (visible && editingId) {
       dataSourceApi.getById(editingId).then((res) => {
         form.setFieldsValue(res.data?.data || {});
       }).catch(() => {
-        // Handle mock data
-        import('@/stores/dataSourceStore').then(({ useDataSourceStore }) => {
-          const ds = useDataSourceStore.getState().dataSources.find(d => d.id === editingId);
-          if (ds) form.setFieldsValue(ds);
-        });
+        const ds = useDataSourceStore.getState().dataSources.find(d => d.id === editingId);
+        if (ds) form.setFieldsValue(ds);
       });
     } else if (visible) {
       form.resetFields();
@@ -75,8 +80,6 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
     try {
       const values = await form.validateFields();
       setLoading(true);
-      
-      const { useDataSourceStore } = await import('@/stores/dataSourceStore');
       const store = useDataSourceStore.getState();
       
       if (isEdit) {
@@ -120,6 +123,14 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
           rules={[{ required: true, message: '请输入数据源名称' }]}
         >
           <Input placeholder="例如：生产环境-MySQL" />
+        </Form.Item>
+
+        <Form.Item name="group_id" label="所属分组">
+          <Select
+            allowClear
+            placeholder="可选：选择数据源分组"
+            options={groups.map((group) => ({ label: group.name, value: group.id }))}
+          />
         </Form.Item>
 
         <Form.Item

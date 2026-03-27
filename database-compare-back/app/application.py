@@ -7,12 +7,23 @@ from loguru import logger
 from config import settings
 from app.api.v1 import router as api_v1_router
 from app.api.websocket import router as ws_router
+from app.db.session import SessionLocal
+from app.services.history_service import HistoryService
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     logger.info(f"启动 {settings.APP_NAME} v{settings.APP_VERSION}")
+    db = SessionLocal()
+    try:
+        deleted = HistoryService(db).auto_cleanup_by_settings()
+        if deleted > 0:
+            logger.info(f"启动自动清理历史记录完成，删除 {deleted} 条")
+    except Exception as exc:
+        logger.warning(f"启动自动清理历史记录失败: {exc}")
+    finally:
+        db.close()
     yield
     logger.info("应用关闭")
 

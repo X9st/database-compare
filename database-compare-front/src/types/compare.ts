@@ -17,6 +17,13 @@ export interface ColumnMapping {
   target_column: string;
 }
 
+export interface TablePrimaryKeyConfig {
+  source_table: string;
+  primary_keys: string[];
+  target_table?: string;
+  target_primary_keys?: string[];
+}
+
 export interface IgnoreRule {
   id: string;
   name: string;
@@ -28,10 +35,15 @@ export interface IgnoreRule {
 
 export interface CompareOptions {
   mode: CompareMode;
+  resume_from_checkpoint?: boolean;
   incremental_config?: {
-    time_column: string;
-    start_time: string;
+    time_column?: string;
+    target_time_column?: string;
+    start_time?: string;
     end_time?: string;
+    batch_column?: string;
+    target_batch_column?: string;
+    batch_value?: string;
   };
   structure_options: {
     compare_index: boolean;
@@ -47,6 +59,7 @@ export interface CompareOptions {
     page_size: number;
   };
   table_mappings: TableMapping[];
+  table_primary_keys?: TablePrimaryKeyConfig[];
   ignore_rules: string[];
 }
 

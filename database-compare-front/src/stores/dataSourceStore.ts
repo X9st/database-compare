@@ -15,6 +15,7 @@ interface DataSourceState {
   
   fetchGroups: () => Promise<void>;
   addGroup: (name: string) => Promise<void>;
+  updateGroup: (id: string, name: string) => Promise<void>;
   deleteGroup: (id: string) => Promise<void>;
 }
 
@@ -76,7 +77,40 @@ export const useDataSourceStore = create<DataSourceState>((set) => ({
     }
   },
 
-  fetchGroups: async () => {},
-  addGroup: async (_name) => {},
-  deleteGroup: async (_id) => {},
+  fetchGroups: async () => {
+    try {
+      const response = await dataSourceApi.getGroups();
+      const groups = response.data?.data || [];
+      set({ groups: Array.isArray(groups) ? groups : [] });
+    } catch (e) {
+      console.error('Failed to fetch datasource groups:', e);
+      set({ groups: [] });
+    }
+  },
+
+  addGroup: async (name) => {
+    const response = await dataSourceApi.createGroup({ name });
+    const created = response.data?.data;
+    if (created) {
+      set((state) => ({ groups: [...state.groups, created] }));
+    }
+  },
+
+  updateGroup: async (id, name) => {
+    const response = await dataSourceApi.updateGroup(id, { name });
+    const updated = response.data?.data;
+    if (updated) {
+      set((state) => ({
+        groups: state.groups.map((group) => (group.id === id ? updated : group)),
+      }));
+    }
+  },
+
+  deleteGroup: async (id) => {
+    await dataSourceApi.deleteGroup(id);
+    set((state) => ({
+      groups: state.groups.filter((group) => group.id !== id),
+      dataSources: state.dataSources.map((ds) => (ds.group_id === id ? { ...ds, group_id: undefined, group_name: undefined } : ds)),
+    }));
+  },
 }));

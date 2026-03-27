@@ -270,3 +270,295 @@ def test_template_create_task_and_result_export_download():
             db.close()
 
         _delete_datasource_records(source_id, target_id)
+
+
+def test_history_keyword_matches_task_and_datasource_names():
+    client = _build_client()
+    source_name = f"qa-history-src-{uuid.uuid4().hex[:6]}"
+    target_name = f"qa-history-tgt-{uuid.uuid4().hex[:6]}"
+    source_id = _create_datasource_record(source_name)
+    target_id = _create_datasource_record(target_name)
+    task_id = str(uuid.uuid4())
+
+    db = SessionLocal()
+    try:
+        db.add(
+            CompareTask(
+                id=task_id,
+                source_id=source_id,
+                target_id=target_id,
+                status="completed",
+                config={
+                    "source_id": source_id,
+                    "target_id": target_id,
+                    "table_selection": {"mode": "all", "tables": []},
+                    "options": {"mode": "full"},
+                },
+                progress={"completed_source_tables": []},
+                started_at=datetime.utcnow(),
+                completed_at=datetime.utcnow(),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    try:
+        by_task_resp = client.get("/api/v1/history", params={"keyword": task_id})
+        assert by_task_resp.status_code == 200, by_task_resp.text
+        assert any(item["task_id"] == task_id for item in by_task_resp.json()["data"])
+
+        by_source_resp = client.get("/api/v1/history", params={"keyword": source_name})
+        assert by_source_resp.status_code == 200, by_source_resp.text
+        assert any(item["task_id"] == task_id for item in by_source_resp.json()["data"])
+
+        by_target_resp = client.get("/api/v1/history", params={"keyword": target_name})
+        assert by_target_resp.status_code == 200, by_target_resp.text
+        assert any(item["task_id"] == task_id for item in by_target_resp.json()["data"])
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(CompareTask).filter(CompareTask.id == task_id).delete()
+            db.commit()
+        finally:
+            db.close()
+        _delete_datasource_records(source_id, target_id)
+
+
+def test_result_table_detail_returns_real_row_counts_and_compare_time():
+    client = _build_client()
+    source_id = _create_datasource_record(f"qa-src-{uuid.uuid4().hex[:8]}")
+    target_id = _create_datasource_record(f"qa-tgt-{uuid.uuid4().hex[:8]}")
+    task_id = str(uuid.uuid4())
+    result_id = str(uuid.uuid4())
+    table_name = "users -> users_bak"
+
+    db = SessionLocal()
+    try:
+        db.add(
+            CompareTask(
+                id=task_id,
+                source_id=source_id,
+                target_id=target_id,
+                status="completed",
+                config={
+                    "source_id": source_id,
+                    "target_id": target_id,
+                    "table_selection": {"mode": "mapping", "tables": []},
+                    "options": {"mode": "full"},
+                },
+                progress={
+                    "completed_source_tables": ["users"],
+                    "table_stats": {
+                        table_name: {
+                            "source_table": "users",
+                            "target_table": "users_bak",
+                            "source_row_count": 123,
+                            "target_row_count": 125,
+                            "compare_time_ms": 987,
+                            "structure_diffs_count": 1,
+                            "data_diffs_count": 2,
+                        }
+                    },
+                },
+                started_at=datetime.utcnow(),
+                completed_at=datetime.utcnow(),
+            )
+        )
+        db.add(
+            CompareResult(
+                id=result_id,
+                task_id=task_id,
+                summary={
+                    "total_tables": 1,
+                    "structure_match_tables": 0,
+                    "structure_diff_tables": 1,
+                    "data_match_tables": 0,
+                    "data_diff_tables": 1,
+                    "no_diff_tables": 0,
+                    "total_structure_diffs": 1,
+                    "total_data_diffs": 2,
+                    "structure_diff_type_counts": {"column_missing": 1},
+                    "data_diff_type_counts": {"value_diff": 2},
+                },
+            )
+        )
+        db.add(
+            StructureDiff(
+                id=str(uuid.uuid4()),
+                result_id=result_id,
+                table_name=table_name,
+                diff_type="column_missing",
+                field_name="email",
+                diff_detail="目标库缺少字段",
+            )
+        )
+        db.add(
+            DataDiff(
+                id=str(uuid.uuid4()),
+                result_id=result_id,
+                table_name=table_name,
+                primary_key={"id": 1},
+                diff_type="value_diff",
+                diff_columns=["name"],
+                source_values={"name": "Alice"},
+                target_values={"name": "Alicia"},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    try:
+        detail_resp = client.get(f"/api/v1/compare/results/{result_id}/tables/{table_name}")
+        assert detail_resp.status_code == 200, detail_resp.text
+        detail = detail_resp.json()["data"]
+        assert detail["source_row_count"] == 123
+        assert detail["target_row_count"] == 125
+        assert detail["compare_time_ms"] == 987
+
+        summary_resp = client.get(f"/api/v1/compare/results/{result_id}")
+        assert summary_resp.status_code == 200, summary_resp.text
+        summary = summary_resp.json()["data"]["summary"]
+        assert summary["no_diff_tables"] == 0
+        assert summary["structure_diff_type_counts"]["column_missing"] == 1
+        assert summary["data_diff_type_counts"]["value_diff"] == 2
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(StructureDiff).filter(StructureDiff.result_id == result_id).delete()
+            db.query(DataDiff).filter(DataDiff.result_id == result_id).delete()
+            db.query(CompareResult).filter(CompareResult.id == result_id).delete()
+            db.query(CompareTask).filter(CompareTask.id == task_id).delete()
+            db.commit()
+        finally:
+            db.close()
+        _delete_datasource_records(source_id, target_id)
+
+
+def test_result_compare_endpoint_returns_added_resolved_and_unchanged():
+    client = _build_client()
+    source_id = _create_datasource_record(f"qa-src-{uuid.uuid4().hex[:8]}")
+    target_id = _create_datasource_record(f"qa-tgt-{uuid.uuid4().hex[:8]}")
+    baseline_task_id = str(uuid.uuid4())
+    current_task_id = str(uuid.uuid4())
+    baseline_result_id = str(uuid.uuid4())
+    current_result_id = str(uuid.uuid4())
+
+    db = SessionLocal()
+    try:
+        db.add_all([
+            CompareTask(
+                id=baseline_task_id,
+                source_id=source_id,
+                target_id=target_id,
+                status="completed",
+                config={"source_id": source_id, "target_id": target_id, "table_selection": {"mode": "all", "tables": []}, "options": {"mode": "full"}},
+            ),
+            CompareTask(
+                id=current_task_id,
+                source_id=source_id,
+                target_id=target_id,
+                status="completed",
+                config={"source_id": source_id, "target_id": target_id, "table_selection": {"mode": "all", "tables": []}, "options": {"mode": "full"}},
+            ),
+            CompareResult(id=baseline_result_id, task_id=baseline_task_id, summary={"total_tables": 1}),
+            CompareResult(id=current_result_id, task_id=current_task_id, summary={"total_tables": 1}),
+        ])
+
+        # baseline: A(struct) + B(data)
+        struct_a_id = str(uuid.uuid4())
+        data_b_id = str(uuid.uuid4())
+        db.add(
+            StructureDiff(
+                id=struct_a_id,
+                result_id=baseline_result_id,
+                table_name="users",
+                diff_type="column_missing",
+                field_name="email",
+                diff_detail="missing email",
+            )
+        )
+        db.add(
+            DataDiff(
+                id=data_b_id,
+                result_id=baseline_result_id,
+                table_name="users",
+                primary_key={"id": 1},
+                diff_type="value_diff",
+                diff_columns=["name"],
+                source_values={"name": "Alice"},
+                target_values={"name": "Alicia"},
+            )
+        )
+
+        # current: A(struct, unchanged) + C(data, added)
+        db.add(
+            StructureDiff(
+                id=str(uuid.uuid4()),
+                result_id=current_result_id,
+                table_name="users",
+                diff_type="column_missing",
+                field_name="email",
+                diff_detail="missing email",
+            )
+        )
+        db.add(
+            DataDiff(
+                id=str(uuid.uuid4()),
+                result_id=current_result_id,
+                table_name="users",
+                primary_key={"id": 2},
+                diff_type="row_extra_in_target",
+                diff_columns=[],
+                source_values={},
+                target_values={"id": 2},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    try:
+        resp = client.post(
+            "/api/v1/compare/results/compare",
+            json={
+                "baseline_result_id": baseline_result_id,
+                "current_result_id": current_result_id,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()["data"]
+        summary = payload["summary"]
+        assert summary["added"] == 1
+        assert summary["resolved"] == 1
+        assert summary["unchanged"] == 1
+        assert summary["added_data"] == 1
+        assert summary["resolved_data"] == 1
+        assert summary["unchanged_structure"] == 1
+
+        export_resp = client.post(
+            "/api/v1/compare/results/compare/export",
+            json={
+                "baseline_result_id": baseline_result_id,
+                "current_result_id": current_result_id,
+                "format": "txt",
+            },
+        )
+        assert export_resp.status_code == 200, export_resp.text
+        export_data = export_resp.json()["data"]
+        assert export_data["file_name"].endswith(".txt")
+        download_resp = client.get(export_data["download_url"])
+        assert download_resp.status_code == 200
+        assert len(download_resp.content) > 0
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(StructureDiff).filter(StructureDiff.result_id.in_([baseline_result_id, current_result_id])).delete(synchronize_session=False)
+            db.query(DataDiff).filter(DataDiff.result_id.in_([baseline_result_id, current_result_id])).delete(synchronize_session=False)
+            db.query(CompareResult).filter(CompareResult.id.in_([baseline_result_id, current_result_id])).delete(synchronize_session=False)
+            db.query(CompareTask).filter(CompareTask.id.in_([baseline_task_id, current_task_id])).delete(synchronize_session=False)
+            db.commit()
+        finally:
+            db.close()
+        _delete_datasource_records(source_id, target_id)

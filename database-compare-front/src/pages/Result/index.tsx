@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Tabs, Card, Row, Col, Statistic, Button, Table, Tag, message, Spin, Pagination, Select, Modal } from 'antd';
+import { Tabs, Card, Row, Col, Statistic, Button, Table, Tag, message, Spin, Pagination, Select, Modal, Input, Alert } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
-import { resultApi, CompareResultSummary, StructureDiff, DataDiff, PageInfo } from '@/services/resultApi';
+import { resultApi, CompareResultSummary, StructureDiff, DataDiff, PageInfo, ResultCompareResponse } from '@/services/resultApi';
 import { resolveApiUrl } from '@/services/api';
 
 const { Option } = Select;
@@ -20,6 +20,15 @@ const Result: React.FC = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [exportFormat, setExportFormat] = useState<'excel' | 'html' | 'txt'>('excel');
+  const [structureFilterTable, setStructureFilterTable] = useState('');
+  const [structureFilterType, setStructureFilterType] = useState<string | undefined>(undefined);
+  const [dataFilterTable, setDataFilterTable] = useState('');
+  const [dataFilterType, setDataFilterType] = useState<string | undefined>(undefined);
+  const [baselineResultId, setBaselineResultId] = useState('');
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareResult, setCompareResult] = useState<ResultCompareResponse | null>(null);
+  const [compareExportLoading, setCompareExportLoading] = useState(false);
+  const [compareExportFormat, setCompareExportFormat] = useState<'txt' | 'html' | 'excel'>('txt');
 
   useEffect(() => {
     if (result_id) {
@@ -45,12 +54,22 @@ const Result: React.FC = () => {
     }
   };
 
-  const fetchStructureDiffs = async (page: number, page_size = 20) => {
+  const fetchStructureDiffs = async (
+    page: number,
+    page_size = 20,
+    table_name: string = structureFilterTable,
+    diff_type: string | undefined = structureFilterType
+  ) => {
     if (!result_id) {
       return;
     }
     try {
-      const response = await resultApi.getStructureDiffs(result_id, { page, page_size });
+      const response = await resultApi.getStructureDiffs(result_id, {
+        page,
+        page_size,
+        table_name: table_name || undefined,
+        diff_type: diff_type || undefined,
+      });
       setStructureDiffs(response.data?.data || []);
       if (response.data?.page_info) {
         setStructurePageInfo(response.data.page_info);
@@ -60,12 +79,22 @@ const Result: React.FC = () => {
     }
   };
 
-  const fetchDataDiffs = async (page: number, page_size = 20) => {
+  const fetchDataDiffs = async (
+    page: number,
+    page_size = 20,
+    table_name: string = dataFilterTable,
+    diff_type: string | undefined = dataFilterType
+  ) => {
     if (!result_id) {
       return;
     }
     try {
-      const response = await resultApi.getDataDiffs(result_id, { page, page_size });
+      const response = await resultApi.getDataDiffs(result_id, {
+        page,
+        page_size,
+        table_name: table_name || undefined,
+        diff_type: diff_type || undefined,
+      });
       setDataDiffs(response.data?.data || []);
       if (response.data?.page_info) {
         setDataPageInfo(response.data.page_info);
@@ -86,6 +115,7 @@ const Result: React.FC = () => {
         options: {
           include_structure_diffs: true,
           include_data_diffs: true,
+          tables: Array.from(new Set([structureFilterTable, dataFilterTable].filter(Boolean))),
         },
       });
       const result = response.data?.data;
@@ -101,6 +131,47 @@ const Result: React.FC = () => {
     }
   };
 
+  const handleCompare = async () => {
+    if (!result_id || !baselineResultId) {
+      message.warning('请输入基线结果ID');
+      return;
+    }
+    setCompareLoading(true);
+    try {
+      const resp = await resultApi.compareResults(baselineResultId, result_id);
+      setCompareResult(resp.data?.data || null);
+      message.success('结果对比完成');
+    } catch {
+      message.error('结果对比失败');
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  const handleExportCompare = async () => {
+    if (!result_id || !baselineResultId) {
+      message.warning('请先输入基线结果ID并执行对比');
+      return;
+    }
+    setCompareExportLoading(true);
+    try {
+      const resp = await resultApi.exportComparedResults({
+        baseline_result_id: baselineResultId,
+        current_result_id: result_id,
+        format: compareExportFormat,
+      });
+      const payload = resp.data?.data;
+      if (payload?.download_url) {
+        window.open(resolveApiUrl(payload.download_url), '_blank');
+      }
+      message.success('对比结论导出成功');
+    } catch {
+      message.error('导出对比结论失败');
+    } finally {
+      setCompareExportLoading(false);
+    }
+  };
+
   const getDiffTypeColor = (type: string) => {
     switch (type) {
       case 'column_missing': return 'red';
@@ -110,7 +181,9 @@ const Result: React.FC = () => {
       case 'constraint_diff': return 'purple';
       case 'value_diff': return 'orange';
       case 'row_missing_in_target': return 'red';
-      case 'row_missing_in_source': return 'volcano';
+      case 'row_extra_in_target': return 'volcano';
+      case 'row_count_diff': return 'gold';
+      case 'null_diff': return 'purple';
       default: return 'default';
     }
   };
@@ -124,7 +197,9 @@ const Result: React.FC = () => {
       case 'constraint_diff': return '约束差异';
       case 'value_diff': return '值不一致';
       case 'row_missing_in_target': return '目标库缺失';
-      case 'row_missing_in_source': return '源库缺失';
+      case 'row_extra_in_target': return '目标库多余';
+      case 'row_count_diff': return '行数不一致';
+      case 'null_diff': return '空值差异';
       default: return type;
     }
   };
@@ -171,12 +246,12 @@ const Result: React.FC = () => {
       </div>
 
       <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={5}>
+        <Col span={4}>
           <Card>
             <Statistic title="总表数" value={summary?.summary?.total_tables || 0} />
           </Card>
         </Col>
-        <Col span={5}>
+        <Col span={4}>
           <Card>
             <Statistic
               title="结构一致"
@@ -185,7 +260,7 @@ const Result: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={5}>
+        <Col span={4}>
           <Card>
             <Statistic
               title="结构差异"
@@ -194,7 +269,7 @@ const Result: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={5}>
+        <Col span={4}>
           <Card>
             <Statistic
               title="数据一致"
@@ -212,11 +287,69 @@ const Result: React.FC = () => {
             />
           </Card>
         </Col>
+        <Col span={4}>
+          <Card>
+            <Statistic
+              title="完全一致"
+              value={summary?.summary?.no_diff_tables || 0}
+              valueStyle={{ color: '#3f8600' }}
+            />
+          </Card>
+        </Col>
       </Row>
+
+      <Card bordered={false} style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Input
+            placeholder="输入基线结果ID"
+            value={baselineResultId}
+            onChange={(e) => setBaselineResultId(e.target.value)}
+          />
+          <Button loading={compareLoading} onClick={handleCompare}>对比当前结果</Button>
+          <Select value={compareExportFormat} onChange={setCompareExportFormat} style={{ width: 120 }}>
+            <Option value="txt">TXT</Option>
+            <Option value="html">HTML</Option>
+            <Option value="excel">Excel</Option>
+          </Select>
+          <Button loading={compareExportLoading} onClick={handleExportCompare}>导出对比结论</Button>
+        </div>
+        {compareResult && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="info"
+            message={`新增差异 ${compareResult.summary.added}，已消除差异 ${compareResult.summary.resolved}，不变差异 ${compareResult.summary.unchanged}`}
+          />
+        )}
+      </Card>
 
       <Card bordered={false}>
         <Tabs defaultActiveKey="1">
           <Tabs.TabPane tab={`结构差异 (${structurePageInfo.total})`} key="1">
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <Input
+                placeholder="按表名筛选"
+                value={structureFilterTable}
+                onChange={(e) => setStructureFilterTable(e.target.value)}
+                allowClear
+              />
+              <Select
+                style={{ width: 220 }}
+                allowClear
+                placeholder="差异类型"
+                value={structureFilterType}
+                onChange={setStructureFilterType}
+              >
+                <Option value="table_missing_in_target">目标缺表</Option>
+                <Option value="table_extra_in_target">目标多表</Option>
+                <Option value="column_missing">字段缺失</Option>
+                <Option value="column_extra">字段多余</Option>
+                <Option value="column_type_diff">字段类型差异</Option>
+                <Option value="column_length_diff">字段长度差异</Option>
+                <Option value="column_precision_diff">字段精度差异</Option>
+                <Option value="comment_diff">注释差异</Option>
+              </Select>
+              <Button onClick={() => fetchStructureDiffs(1, structurePageInfo.page_size)}>筛选</Button>
+            </div>
             <Table
               columns={structureColumns}
               dataSource={structureDiffs}
@@ -237,6 +370,28 @@ const Result: React.FC = () => {
             )}
           </Tabs.TabPane>
           <Tabs.TabPane tab={`数据差异 (${dataPageInfo.total})`} key="2">
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <Input
+                placeholder="按表名筛选"
+                value={dataFilterTable}
+                onChange={(e) => setDataFilterTable(e.target.value)}
+                allowClear
+              />
+              <Select
+                style={{ width: 220 }}
+                allowClear
+                placeholder="差异类型"
+                value={dataFilterType}
+                onChange={setDataFilterType}
+              >
+                <Option value="row_count_diff">行数不一致</Option>
+                <Option value="row_missing_in_target">目标缺行</Option>
+                <Option value="row_extra_in_target">目标多行</Option>
+                <Option value="value_diff">值差异</Option>
+                <Option value="null_diff">空值差异</Option>
+              </Select>
+              <Button onClick={() => fetchDataDiffs(1, dataPageInfo.page_size)}>筛选</Button>
+            </div>
             <Table
               columns={dataColumns}
               dataSource={dataDiffs}

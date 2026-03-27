@@ -48,6 +48,28 @@ export interface ExportConfigRequest {
   include_system_settings?: boolean;
 }
 
+export interface CompareTemplateConfig {
+  source_id?: string;
+  target_id?: string;
+  table_selection?: Record<string, any>;
+  options?: Record<string, any>;
+}
+
+export interface CompareTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  config: CompareTemplateConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateTemplateRequest {
+  name: string;
+  description?: string;
+  config: CompareTemplateConfig;
+}
+
 export interface ExportConfigResult {
   file_path: string;
   file_name: string;
@@ -79,6 +101,22 @@ export const settingsApi = {
 
   toggleIgnoreRule: (id: string, enabled: boolean) =>
     api.put<ApiResponse<null>>(`/settings/ignore-rules/${id}/toggle`, { enabled }),
+
+  // 模板
+  getTemplates: () =>
+    api.get<ApiResponse<CompareTemplate[]>>('/settings/templates'),
+
+  createTemplate: (data: CreateTemplateRequest) =>
+    api.post<ApiResponse<CompareTemplate>>('/settings/templates', data),
+
+  updateTemplate: (id: string, data: Partial<CreateTemplateRequest>) =>
+    api.put<ApiResponse<CompareTemplate>>(`/settings/templates/${id}`, data),
+
+  deleteTemplate: (id: string) =>
+    api.delete<ApiResponse<null>>(`/settings/templates/${id}`),
+
+  createTaskFromTemplate: (id: string, override?: Record<string, any>) =>
+    api.post<ApiResponse<{ task_id: string; status: string; created_at: string }>>(`/settings/templates/${id}/create-task`, { override }),
 
   // 系统设置
   getSystemSettings: () =>

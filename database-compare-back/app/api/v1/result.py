@@ -5,7 +5,7 @@ from typing import Optional
 
 from app.db.session import get_db
 from app.services.result_service import ResultService
-from app.schemas.result import ExportRequest
+from app.schemas.result import ExportRequest, ResultCompareRequest, ResultCompareExportRequest
 from app.schemas.common import Response, PageResponse
 
 router = APIRouter()
@@ -13,6 +13,39 @@ router = APIRouter()
 
 def get_service(db: Session = Depends(get_db)) -> ResultService:
     return ResultService(db)
+
+
+@router.post("/compare")
+async def compare_results(
+    request: ResultCompareRequest,
+    service: ResultService = Depends(get_service)
+):
+    """对比两份比对结果"""
+    try:
+        data = service.compare_results(
+            baseline_result_id=request.baseline_result_id,
+            current_result_id=request.current_result_id,
+        )
+        return Response(data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/compare/export")
+async def export_compare_results(
+    request: ResultCompareExportRequest,
+    service: ResultService = Depends(get_service)
+):
+    """导出结果对比结论"""
+    try:
+        data = service.export_compare_report(
+            baseline_result_id=request.baseline_result_id,
+            current_result_id=request.current_result_id,
+            export_format=request.format,
+        )
+        return Response(message="导出成功", data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{result_id}")

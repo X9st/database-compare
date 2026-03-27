@@ -13,6 +13,8 @@ class DataDiffType(str, Enum):
     ROW_EXTRA_IN_TARGET = "row_extra_in_target"
     VALUE_DIFF = "value_diff"
     NULL_DIFF = "null_diff"
+    PRIMARY_KEY_MISSING = "primary_key_missing"
+    TABLE_COMPARE_ERROR = "table_compare_error"
 
 
 @dataclass
@@ -46,12 +48,13 @@ class DataComparator:
     
     def compare_row_count(self, table_name: str, 
                           target_table: str = None,
-                          where_clause: str = None) -> Optional[DataDiff]:
+                          where_clause: str = None,
+                          target_where_clause: str = None) -> Optional[DataDiff]:
         """比对行数"""
         target_table = target_table or table_name
         
         source_count = self.source_conn.get_row_count(table_name, where_clause)
-        target_count = self.target_conn.get_row_count(target_table, where_clause)
+        target_count = self.target_conn.get_row_count(target_table, target_where_clause or where_clause)
         
         if source_count != target_count:
             return DataDiff(
@@ -68,6 +71,7 @@ class DataComparator:
                      target_table: str = None,
                      column_mapping: Dict[str, str] = None,
                      where_clause: str = None,
+                     target_where_clause: str = None,
                      max_diffs: int = 1000) -> List[DataDiff]:
         """比对数据"""
         target_table = target_table or table_name
@@ -100,10 +104,22 @@ class DataComparator:
             effective_mapping[pk] = target_pk
 
         source_fetch_columns = self._merge_columns(compare_columns + primary_keys)
+        target_pk_columns = [effective_mapping.get(pk, pk) for pk in primary_keys]
         
         # 构建排序字段
         order_by = primary_keys.copy()
-        
+        row_count_diff = self.compare_row_count(
+            table_name=table_name,
+            target_table=target_table,
+            where_clause=where_clause,
+            target_where_clause=target_where_clause,
+        )
+        if row_count_diff:
+            diffs.append(row_count_diff)
+            if len(diffs) >= max_diffs:
+                return diffs
+
+        source_pk_set = set()
         offset = 0
         while len(diffs) < max_diffs:
             # 分页获取源数据
@@ -117,7 +133,12 @@ class DataComparator:
             # 获取对应的目标数据
             pk_values = [self._extract_pk(row, primary_keys) for row in source_data]
             target_data = self._fetch_target_by_pks(
-                target_table, pk_values, primary_keys, source_fetch_columns, effective_mapping
+                target_table,
+                pk_values,
+                primary_keys,
+                source_fetch_columns,
+                effective_mapping,
+                base_where_clause=target_where_clause
             )
             target_map = {
                 self._pk_to_key(self._extract_pk_with_mapping(row, primary_keys, effective_mapping)): row
@@ -131,6 +152,7 @@ class DataComparator:
                     
                 pk = self._extract_pk(source_row, primary_keys)
                 pk_key = self._pk_to_key(pk)
+                source_pk_set.add(pk_key)
                 
                 if pk_key not in target_map:
                     # 目标库缺少该行
@@ -167,6 +189,20 @@ class DataComparator:
                         ))
             
             offset += self.page_size
+
+        if len(diffs) < max_diffs:
+            self._append_target_extra_rows(
+                diffs=diffs,
+                table_name=table_name,
+                target_table=target_table,
+                primary_keys=primary_keys,
+                effective_mapping=effective_mapping,
+                source_pk_set=source_pk_set,
+                target_where_clause=target_where_clause,
+                compare_columns=compare_columns,
+                target_pk_columns=target_pk_columns,
+                max_diffs=max_diffs
+            )
         
         return diffs
     
@@ -268,7 +304,8 @@ class DataComparator:
     
     def _fetch_target_by_pks(self, table_name: str, pk_values: List[Dict],
                              pk_columns: List[str], columns: List[str],
-                             column_mapping: Dict[str, str]) -> List[Dict]:
+                             column_mapping: Dict[str, str],
+                             base_where_clause: str = None) -> List[Dict]:
         """根据主键批量获取目标数据"""
         if not pk_values:
             return []
@@ -306,6 +343,9 @@ class DataComparator:
                 conditions.append(f"({' AND '.join(cond_parts)})")
             where = ' OR '.join(conditions)
         
+        if base_where_clause:
+            where = f"({base_where_clause}) AND ({where})"
+
         target_columns = [column_mapping.get(c, c) for c in columns]
         return self.target_conn.fetch_data(
             table_name,
@@ -313,3 +353,54 @@ class DataComparator:
             where,
             limit=max(len(pk_values), 1)
         )
+
+    def _append_target_extra_rows(
+        self,
+        diffs: List[DataDiff],
+        table_name: str,
+        target_table: str,
+        primary_keys: List[str],
+        effective_mapping: Dict[str, str],
+        source_pk_set: set,
+        target_where_clause: Optional[str],
+        compare_columns: List[str],
+        target_pk_columns: List[str],
+        max_diffs: int
+    ) -> None:
+        """补充目标库多余行差异。"""
+        target_fetch_columns = self._merge_columns(
+            [effective_mapping.get(col, col) for col in compare_columns] + target_pk_columns
+        )
+        target_order_by = target_pk_columns.copy()
+
+        offset = 0
+        while len(diffs) < max_diffs:
+            target_data = self.target_conn.fetch_data(
+                target_table,
+                target_fetch_columns,
+                target_where_clause,
+                target_order_by,
+                offset,
+                self.page_size
+            )
+            if not target_data:
+                break
+
+            for target_row in target_data:
+                if len(diffs) >= max_diffs:
+                    break
+                target_pk = self._extract_pk_with_mapping(
+                    target_row, primary_keys, effective_mapping
+                )
+                target_pk_key = self._pk_to_key(target_pk)
+                if target_pk_key in source_pk_set:
+                    continue
+                diffs.append(DataDiff(
+                    table_name=table_name,
+                    primary_key=target_pk,
+                    diff_type=DataDiffType.ROW_EXTRA_IN_TARGET,
+                    diff_columns=[],
+                    target_values=self._serialize_row(target_row)
+                ))
+
+            offset += self.page_size

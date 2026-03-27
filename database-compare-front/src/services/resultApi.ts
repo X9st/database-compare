@@ -24,8 +24,11 @@ export interface CompareResultSummary {
     structure_diff_tables: number;
     data_match_tables: number;
     data_diff_tables: number;
+    no_diff_tables: number;
     total_structure_diffs: number;
     total_data_diffs: number;
+    structure_diff_type_counts: Record<string, number>;
+    data_diff_type_counts: Record<string, number>;
   };
 }
 
@@ -91,6 +94,40 @@ export interface ExportResult {
   download_url: string;
 }
 
+export interface CompareExportRequest {
+  baseline_result_id: string;
+  current_result_id: string;
+  format: 'txt' | 'html' | 'excel';
+}
+
+export interface ResultCompareResponse {
+  baseline_result_id: string;
+  current_result_id: string;
+  summary: {
+    added: number;
+    resolved: number;
+    unchanged: number;
+    added_structure: number;
+    added_data: number;
+    resolved_structure: number;
+    resolved_data: number;
+    unchanged_structure: number;
+    unchanged_data: number;
+  };
+  added: {
+    structure: StructureDiff[];
+    data: DataDiff[];
+  };
+  resolved: {
+    structure: StructureDiff[];
+    data: DataDiff[];
+  };
+  unchanged: {
+    structure: StructureDiff[];
+    data: DataDiff[];
+  };
+}
+
 export const resultApi = {
   // 获取比对结果汇总
   getResult: (result_id: string) =>
@@ -117,4 +154,14 @@ export const resultApi = {
   // 导出比对报告
   exportReport: (result_id: string, request: ExportRequest) =>
     api.post<ApiResponse<ExportResult>>(`/compare/results/${result_id}/export`, request),
+
+  // 结果对比
+  compareResults: (baseline_result_id: string, current_result_id: string) =>
+    api.post<ApiResponse<ResultCompareResponse>>('/compare/results/compare', {
+      baseline_result_id,
+      current_result_id,
+    }),
+
+  exportComparedResults: (request: CompareExportRequest) =>
+    api.post<ApiResponse<ExportResult>>('/compare/results/compare/export', request),
 };

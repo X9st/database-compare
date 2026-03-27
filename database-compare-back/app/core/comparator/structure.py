@@ -2,7 +2,7 @@
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
-from app.core.connector.base import BaseConnector, ColumnInfo, IndexInfo, ConstraintInfo
+from app.core.connector.base import BaseConnector, TableInfo, ColumnInfo, IndexInfo, ConstraintInfo
 
 
 class StructureDiffType(str, Enum):
@@ -12,6 +12,7 @@ class StructureDiffType(str, Enum):
     COLUMN_EXTRA = "column_extra"
     COLUMN_TYPE_DIFF = "column_type_diff"
     COLUMN_LENGTH_DIFF = "column_length_diff"
+    COLUMN_PRECISION_DIFF = "column_precision_diff"
     COLUMN_NULLABLE_DIFF = "column_nullable_diff"
     COLUMN_DEFAULT_DIFF = "column_default_diff"
     INDEX_DIFF = "index_diff"
@@ -41,6 +42,8 @@ class StructureComparator:
         self.compare_index = self.options.get('compare_index', True)
         self.compare_constraint = self.options.get('compare_constraint', True)
         self.compare_comment = self.options.get('compare_comment', True)
+        self._source_table_meta: Optional[Dict[str, TableInfo]] = None
+        self._target_table_meta: Optional[Dict[str, TableInfo]] = None
     
     def compare_tables(self, source_tables: List[str], 
                        target_tables: List[str]) -> List[StructureDiff]:
@@ -69,25 +72,34 @@ class StructureComparator:
     
     def compare_columns(self, table_name: str, 
                         source_columns: List[ColumnInfo],
-                        target_columns: List[ColumnInfo]) -> List[StructureDiff]:
+                        target_columns: List[ColumnInfo],
+                        column_mapping: Optional[Dict[str, str]] = None) -> List[StructureDiff]:
         """比对字段"""
         diffs = []
+        column_mapping = column_mapping or {}
         source_map = {c.name.lower(): c for c in source_columns}
         target_map = {c.name.lower(): c for c in target_columns}
+        mapped_source_keys = {
+            self._get_mapped_column_name(src_col.name, column_mapping).lower()
+            for src_col in source_columns
+        }
         
         # 检查缺少和多余的字段
         for col_name, src_col in source_map.items():
-            if col_name not in target_map:
+            mapped_target_name = self._get_mapped_column_name(src_col.name, column_mapping)
+            target_key = mapped_target_name.lower()
+            if target_key not in target_map:
                 diffs.append(StructureDiff(
                     table_name=table_name,
                     diff_type=StructureDiffType.COLUMN_MISSING,
                     field_name=src_col.name,
                     source_value=src_col.data_type,
-                    diff_detail=f"目标表缺少字段: {src_col.name}"
+                    target_value=mapped_target_name,
+                    diff_detail=f"目标表缺少字段: {src_col.name} -> {mapped_target_name}"
                 ))
         
         for col_name, tgt_col in target_map.items():
-            if col_name not in source_map:
+            if col_name not in mapped_source_keys:
                 diffs.append(StructureDiff(
                     table_name=table_name,
                     diff_type=StructureDiffType.COLUMN_EXTRA,
@@ -98,8 +110,10 @@ class StructureComparator:
         
         # 比对共有字段的属性
         for col_name, src_col in source_map.items():
-            if col_name in target_map:
-                tgt_col = target_map[col_name]
+            mapped_target_name = self._get_mapped_column_name(src_col.name, column_mapping)
+            target_key = mapped_target_name.lower()
+            if target_key in target_map:
+                tgt_col = target_map[target_key]
                 
                 # 数据类型
                 if src_col.data_type.lower() != tgt_col.data_type.lower():
@@ -121,6 +135,17 @@ class StructureComparator:
                         source_value=str(src_col.length),
                         target_value=str(tgt_col.length),
                         diff_detail=f"字段 {src_col.name} 长度不同"
+                    ))
+
+                # 字段精度/小数位
+                if src_col.precision != tgt_col.precision or src_col.scale != tgt_col.scale:
+                    diffs.append(StructureDiff(
+                        table_name=table_name,
+                        diff_type=StructureDiffType.COLUMN_PRECISION_DIFF,
+                        field_name=src_col.name,
+                        source_value=f"precision={src_col.precision}, scale={src_col.scale}",
+                        target_value=f"precision={tgt_col.precision}, scale={tgt_col.scale}",
+                        diff_detail=f"字段 {src_col.name} 精度/小数位不同"
                     ))
                 
                 # 可空属性
@@ -159,7 +184,8 @@ class StructureComparator:
         return diffs
     
     def compare_table_structure(self, table_name: str,
-                                table_mapping: Dict[str, str] = None) -> List[StructureDiff]:
+                                table_mapping: Dict[str, str] = None,
+                                column_mapping: Optional[Dict[str, str]] = None) -> List[StructureDiff]:
         """比对单表结构"""
         target_table = table_mapping.get(table_name, table_name) if table_mapping else table_name
         diffs = []
@@ -167,7 +193,20 @@ class StructureComparator:
         # 获取字段信息
         source_columns = self.source_conn.get_columns(table_name)
         target_columns = self.target_conn.get_columns(target_table)
-        diffs.extend(self.compare_columns(table_name, source_columns, target_columns))
+        diffs.extend(self.compare_columns(table_name, source_columns, target_columns, column_mapping=column_mapping))
+
+        if self.compare_comment:
+            source_comment = self._get_table_comment(table_name, source=True)
+            target_comment = self._get_table_comment(target_table, source=False)
+            if source_comment != target_comment:
+                diffs.append(StructureDiff(
+                    table_name=table_name,
+                    diff_type=StructureDiffType.COMMENT_DIFF,
+                    field_name="__table_comment__",
+                    source_value=source_comment,
+                    target_value=target_comment,
+                    diff_detail=f"表注释不同: {table_name}"
+                ))
         
         # 比对索引
         if self.compare_index:
@@ -182,6 +221,26 @@ class StructureComparator:
             diffs.extend(self._compare_constraints(table_name, source_constraints, target_constraints))
         
         return diffs
+
+    def _get_table_comment(self, table_name: str, source: bool) -> Optional[str]:
+        if source:
+            if self._source_table_meta is None:
+                self._source_table_meta = {t.name.lower(): t for t in self.source_conn.get_tables()}
+            table = self._source_table_meta.get(table_name.lower())
+        else:
+            if self._target_table_meta is None:
+                self._target_table_meta = {t.name.lower(): t for t in self.target_conn.get_tables()}
+            table = self._target_table_meta.get(table_name.lower())
+        return table.comment if table else None
+
+    def _get_mapped_column_name(self, source_column: str, column_mapping: Dict[str, str]) -> str:
+        if source_column in column_mapping:
+            return column_mapping[source_column]
+        source_key = source_column.lower()
+        for src, tgt in (column_mapping or {}).items():
+            if str(src).lower() == source_key:
+                return tgt
+        return source_column
     
     def _compare_indexes(self, table_name: str,
                          source_indexes: List[IndexInfo],

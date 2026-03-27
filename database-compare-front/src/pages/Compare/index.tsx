@@ -42,10 +42,49 @@ const Compare: React.FC = () => {
   const prev = () => setCurrent(current - 1);
 
   const handleStart = async () => {
+    const options = current_task?.options;
+    if (!options) {
+      message.error('比对参数缺失');
+      return;
+    }
+
+    if (options.mode === 'incremental') {
+      const inc = options.incremental_config;
+      const hasTime = Boolean(inc?.time_column && (inc?.start_time || inc?.end_time));
+      const hasBatch = Boolean(inc?.batch_column && inc?.batch_value);
+      if (!hasTime && !hasBatch) {
+        message.error('增量模式下请至少配置时间条件或批次条件');
+        return;
+      }
+    }
+
+    const pkConfigs = options.table_primary_keys || [];
+    const hasInvalidPkConfig = pkConfigs.some((item) => {
+      if (!item.source_table) {
+        return true;
+      }
+      if (!item.primary_keys || item.primary_keys.length === 0) {
+        return true;
+      }
+      if (item.target_primary_keys && item.target_primary_keys.length > 0) {
+        return item.target_primary_keys.length !== item.primary_keys.length;
+      }
+      return false;
+    });
+
+    if (hasInvalidPkConfig) {
+      message.error('业务主键配置不完整，或源/目标主键数量不一致');
+      return;
+    }
+
     try {
-      await startCompare();
+      const started = await startCompare();
       setCurrent(current + 1);
-      message.success('比对任务已启动');
+      if (started.resume_from_task_id) {
+        message.success(`已从失败任务 ${started.resume_from_task_id} 断点续跑`);
+      } else {
+        message.success('比对任务已启动');
+      }
     } catch (e) {
       message.error('启动失败');
     }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Tag, Space, Card, Popconfirm, message, Pagination } from 'antd';
+import { Table, Button, Tag, Space, Card, Popconfirm, message, Pagination, Input } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { historyApi, HistoryItem, PageInfo } from '@/services/historyApi';
 
@@ -13,11 +14,16 @@ const History: React.FC = () => {
     total: 0,
     total_pages: 0,
   });
+  const [keyword, setKeyword] = useState('');
 
-  const fetchHistory = async (page = 1, page_size = 20) => {
+  const fetchHistory = async (page = 1, page_size = 20, keywordValue = keyword) => {
     setLoading(true);
     try {
-      const response = await historyApi.getList({ page, page_size });
+      const response = await historyApi.getList({
+        page,
+        page_size,
+        keyword: keywordValue || undefined,
+      });
       const result = response.data;
       setData(result.data || []);
       if (result.page_info) {
@@ -32,7 +38,7 @@ const History: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchHistory();
+    fetchHistory(1, pageInfo.page_size, '');
   }, []);
 
   const handleDelete = async (task_id: string) => {
@@ -47,6 +53,10 @@ const History: React.FC = () => {
 
   const handlePageChange = (page: number, page_size: number) => {
     fetchHistory(page, page_size);
+  };
+
+  const handleSearch = () => {
+    fetchHistory(1, pageInfo.page_size);
   };
 
   const getStatusColor = (status: string) => {
@@ -107,6 +117,18 @@ const History: React.FC = () => {
   return (
     <div style={{ background: '#fff', padding: 24, borderRadius: 8, minHeight: '100%' }}>
       <Card title="历史记录" bordered={false}>
+        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
+          <Input
+            style={{ width: 360 }}
+            placeholder="搜索任务ID / 源库名称 / 目标库名称"
+            prefix={<SearchOutlined />}
+            value={keyword}
+            allowClear
+            onChange={(e) => setKeyword(e.target.value)}
+            onPressEnter={handleSearch}
+          />
+          <Button type="primary" onClick={handleSearch}>搜索</Button>
+        </div>
         <Table
           columns={columns}
           dataSource={data}

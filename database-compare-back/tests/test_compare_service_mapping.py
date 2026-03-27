@@ -97,3 +97,122 @@ def test_build_compare_plan_legacy_include_mode_compatible():
     assert plan[0]["target_table"] == "users"
     assert plan[0]["display_table"] == "users"
     assert plan[0]["column_mapping"] == {}
+
+
+def test_incremental_where_clause_supports_time_and_batch_with_mapping():
+    service = _build_service()
+    options = {
+        "mode": "incremental",
+        "incremental_config": {
+            "time_column": "created_at",
+            "start_time": "2026-01-01 00:00:00",
+            "end_time": "2026-01-31 23:59:59",
+            "batch_column": "batch_no",
+            "batch_value": "B202601",
+        }
+    }
+    mapping = {"created_at": "created_time", "batch_no": "batch_id"}
+
+    source_where, target_where = service._build_incremental_where_clauses(
+        options, "orders_src", "orders_tgt", mapping
+    )
+
+    assert "created_at >=" in source_where
+    assert "created_at <=" in source_where
+    assert "batch_no = 'B202601'" in source_where
+    assert "created_time >=" in target_where
+    assert "created_time <=" in target_where
+    assert "batch_id = 'B202601'" in target_where
+
+
+def test_validate_incremental_config_requires_time_or_batch_filter():
+    service = _build_service()
+    invalid_config = {
+        "options": {
+            "mode": "incremental",
+            "incremental_config": {
+                "start_time": "2026-01-01 00:00:00",
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="时间字段或批次字段"):
+        service._validate_incremental_config(invalid_config)
+
+
+def test_validate_incremental_config_allows_batch_only():
+    service = _build_service()
+    batch_only_config = {
+        "options": {
+            "mode": "incremental",
+            "incremental_config": {
+                "batch_column": "batch_no",
+                "batch_value": "B202603",
+            }
+        }
+    }
+
+    service._validate_incremental_config(batch_only_config)
+
+
+def test_resolve_primary_keys_uses_business_key_fallback():
+    service = _build_service()
+
+    class NoPkSourceConnector:
+        @staticmethod
+        def get_primary_keys(_table):
+            return []
+
+    options = {
+        "table_primary_keys": [
+            {
+                "source_table": "orders_src",
+                "target_table": "orders_tgt",
+                "primary_keys": ["order_id", "line_id"],
+                "target_primary_keys": ["id", "line_no"],
+            }
+        ]
+    }
+
+    primary_keys, pk_mapping, error = service._resolve_primary_keys(
+        source_conn=NoPkSourceConnector(),
+        options=options,
+        source_table="orders_src",
+        target_table="orders_tgt",
+    )
+
+    assert error is None
+    assert primary_keys == ["order_id", "line_id"]
+    assert pk_mapping == {"order_id": "id", "line_id": "line_no"}
+
+
+def test_resolve_primary_keys_rejects_mismatched_target_key_count():
+    service = _build_service()
+
+    class NoPkSourceConnector:
+        @staticmethod
+        def get_primary_keys(_table):
+            return []
+
+    options = {
+        "table_primary_keys": [
+            {
+                "source_table": "orders_src",
+                "target_table": "orders_tgt",
+                "primary_keys": ["order_id", "line_id"],
+                "target_primary_keys": ["id"],
+            }
+        ]
+    }
+
+    primary_keys, pk_mapping, error = service._resolve_primary_keys(
+        source_conn=NoPkSourceConnector(),
+        options=options,
+        source_table="orders_src",
+        target_table="orders_tgt",
+    )
+
+    assert primary_keys == []
+    assert pk_mapping == {}
+    assert error is not None
+    assert "数量不一致" in error

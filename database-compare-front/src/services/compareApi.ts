@@ -22,6 +22,7 @@ export interface TaskCreated {
   task_id: string;
   status: string;
   created_at?: string;
+  resume_from_task_id?: string | null;
 }
 
 export const compareApi = {

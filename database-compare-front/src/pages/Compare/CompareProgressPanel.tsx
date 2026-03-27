@@ -1,16 +1,32 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Progress, Button, Result, Typography, Space, Spin } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useCompareStore } from '@/stores/compareStore';
 import { compareApi, TaskStatusResponse } from '@/services/compareApi';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { resolveApiUrl } from '@/services/api';
 
 const { Text } = Typography;
 
 const CompareProgressPanel: React.FC = () => {
-  const { task_id, task_status, result_id } = useCompareStore();
+  const { task_id, task_status, result_id, resume_from_task_id } = useCompareStore();
   const navigate = useNavigate();
   const [progress, setProgress] = useState<TaskStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const applyTaskStatus = useCallback((data: TaskStatusResponse) => {
+    setProgress(data);
+    if (data.status === 'completed') {
+      useCompareStore.setState({ task_status: 'completed', result_id: data.result_id || null });
+    } else if (data.status === 'failed') {
+      useCompareStore.setState({ task_status: 'error' });
+      setError(data.error_message || '比对失败');
+    } else if (data.status === 'paused') {
+      useCompareStore.setState({ task_status: 'paused' });
+    } else if (data.status === 'running') {
+      useCompareStore.setState({ task_status: 'running' });
+    }
+  }, []);
 
   const fetchProgress = useCallback(async () => {
     if (!task_id) {
@@ -20,30 +36,48 @@ const CompareProgressPanel: React.FC = () => {
       const response = await compareApi.getProgress(task_id);
       const data = response.data?.data;
       if (data) {
-        setProgress(data);
-        if (data.status === 'completed') {
-          useCompareStore.setState({ task_status: 'completed', result_id: data.result_id || null });
-        } else if (data.status === 'failed') {
-          useCompareStore.setState({ task_status: 'error' });
-          setError(data.error_message || '比对失败');
-        } else if (data.status === 'paused') {
-          useCompareStore.setState({ task_status: 'paused' });
-        } else if (data.status === 'running') {
-          useCompareStore.setState({ task_status: 'running' });
-        }
+        applyTaskStatus(data);
       }
     } catch (e) {
       console.error('Failed to fetch progress:', e);
     }
-  }, [task_id]);
+  }, [task_id, applyTaskStatus]);
+
+  const websocketUrl = useMemo(() => {
+    if (!task_id || (task_status !== 'running' && task_status !== 'paused')) {
+      return null;
+    }
+    const httpUrl = resolveApiUrl(`/ws/compare/tasks/${task_id}/progress`);
+    return httpUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+  }, [task_id, task_status]);
+
+  const handleWsMessage = useCallback((payload: any) => {
+    if (payload === 'ping' || payload === 'pong') {
+      return;
+    }
+    if (payload?.type === 'task_progress' && payload?.data) {
+      applyTaskStatus(payload.data);
+    }
+  }, [applyTaskStatus]);
+
+  const { isConnected } = useWebSocket(websocketUrl, {
+    onMessage: handleWsMessage,
+    onError: () => {
+      // WebSocket异常时由轮询兜底
+    },
+  });
 
   useEffect(() => {
-    if (task_status === 'running' && task_id) {
+    if ((task_status === 'running' || task_status === 'paused') && task_id) {
       fetchProgress();
-      const timer = setInterval(fetchProgress, 2000);
+      const timer = setInterval(() => {
+        if (!isConnected) {
+          fetchProgress();
+        }
+      }, 2000);
       return () => clearInterval(timer);
     }
-  }, [task_status, task_id, fetchProgress]);
+  }, [task_status, task_id, fetchProgress, isConnected]);
 
   const handlePause = async () => {
     if (!task_id) {
@@ -141,11 +175,17 @@ const CompareProgressPanel: React.FC = () => {
               {current_table && `当前表: ${current_table}`}
             </Text>
           </div>
+          {resume_from_task_id && (
+            <div style={{ marginTop: 4 }}>
+              <Text type="secondary">续跑来源任务: {resume_from_task_id}</Text>
+            </div>
+          )}
           <div style={{ marginTop: 4 }}>
             <Text type="secondary">
               进度: {completed_tables} / {total_tables} 表
               {elapsed_seconds > 0 && ` | 已用时: ${elapsed_seconds}s`}
               {estimated_remaining_seconds !== undefined && ` | 预计剩余: ${estimated_remaining_seconds}s`}
+              {` | 通道: ${isConnected ? 'WebSocket' : '轮询兜底'}`}
             </Text>
           </div>
           <div style={{ marginTop: 24 }}>

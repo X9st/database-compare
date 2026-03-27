@@ -32,6 +32,16 @@ python main.py
 
 服务将在 http://localhost:18765 启动。
 
+### 推荐启动方式（固定加密密钥路径）
+
+为避免历史数据源密码因密钥路径漂移导致解密失败，建议使用：
+
+```bash
+./scripts/start_backend.sh
+```
+
+该脚本会自动固定 `ENCRYPTION_KEY_FILE` 到后端目录下的 `data/encryption.key`。
+
 ### API 文档
 
 启动服务后，访问：

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     
     # 加密配置
     ENCRYPTION_KEY: Optional[str] = None
+    ENCRYPTION_KEY_FILE: Optional[str] = None
     
     # 比对配置
     DEFAULT_PAGE_SIZE: int = 10000

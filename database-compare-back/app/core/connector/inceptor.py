@@ -1,4 +1,5 @@
 """Inceptor数据库连接器"""
+import re
 from typing import List, Dict, Any, Optional
 from .base import BaseConnector, TableInfo, ColumnInfo, IndexInfo, ConstraintInfo
 
@@ -91,6 +92,7 @@ class InceptorConnector(BaseConnector):
     
     def get_columns(self, table_name: str) -> List[ColumnInfo]:
         """获取表字段"""
+        primary_keys = {pk.lower() for pk in self.get_primary_keys(table_name)}
         self._cursor.execute(f"DESCRIBE {table_name}")
         results = self._cursor.fetchall()
         
@@ -136,7 +138,7 @@ class InceptorConnector(BaseConnector):
                 nullable=True,  # Hive/Inceptor 默认允许空值
                 default_value=None,
                 comment=comment,
-                is_primary_key=False  # Hive/Inceptor 不支持主键
+                is_primary_key=col_name.lower() in primary_keys
             ))
         return columns
     
@@ -145,12 +147,22 @@ class InceptorConnector(BaseConnector):
         return []
     
     def get_constraints(self, table_name: str) -> List[ConstraintInfo]:
-        """获取表约束 (Inceptor不支持传统约束)"""
-        return []
+        """获取表约束（仅尽力识别主键）"""
+        primary_keys = self.get_primary_keys(table_name)
+        if not primary_keys:
+            return []
+        return [ConstraintInfo(
+            name=f"{table_name}_pk",
+            constraint_type="PRIMARY KEY",
+            columns=primary_keys
+        )]
     
     def get_primary_keys(self, table_name: str) -> List[str]:
-        """获取主键字段 (Inceptor不支持主键，返回空列表)"""
-        return []
+        """获取主键字段（尽力从DDL解析）"""
+        ddl_text = self._get_table_ddl_text(table_name)
+        if not ddl_text:
+            return []
+        return self._parse_primary_keys_from_ddl(ddl_text)
     
     def get_row_count(self, table_name: str, where_clause: str = None) -> int:
         """获取行数"""
@@ -174,15 +186,21 @@ class InceptorConnector(BaseConnector):
         
         if order_by:
             sql += f" ORDER BY {', '.join(order_by)}"
-        
-        sql += f" LIMIT {limit}"
-        
+
+        rows = []
         if offset > 0:
-            # Hive SQL 不直接支持 OFFSET，使用子查询模拟
-            # 这里简化处理，对于大数据量应使用其他方案
-            pass
-        
-        self._cursor.execute(sql)
+            # 优先使用 LIMIT offset, size；不支持时回退为 LIMIT offset+size 再在内存截断。
+            paged_sql = f"{sql} LIMIT {offset}, {limit}"
+            try:
+                self._cursor.execute(paged_sql)
+                rows = self._cursor.fetchall()
+            except Exception:
+                fallback_sql = f"{sql} LIMIT {offset + limit}"
+                self._cursor.execute(fallback_sql)
+                rows = self._cursor.fetchall()[offset:offset + limit]
+        else:
+            self._cursor.execute(f"{sql} LIMIT {limit}")
+            rows = self._cursor.fetchall()
         
         # 获取列名
         if columns:
@@ -190,8 +208,7 @@ class InceptorConnector(BaseConnector):
         else:
             col_names = [desc[0] for desc in self._cursor.description]
         
-        results = self._cursor.fetchall()
-        return [dict(zip(col_names, row)) for row in results]
+        return [dict(zip(col_names, row)) for row in rows]
     
     def get_version(self) -> str:
         """获取数据库版本"""
@@ -201,3 +218,38 @@ class InceptorConnector(BaseConnector):
             return result[0] if result else "Unknown"
         except:
             return "Inceptor"
+
+    def _get_table_ddl_text(self, table_name: str) -> str:
+        """获取建表DDL文本"""
+        try:
+            self._cursor.execute(f"SHOW CREATE TABLE {table_name}")
+            rows = self._cursor.fetchall()
+        except Exception:
+            return ""
+
+        ddl_lines = []
+        for row in rows:
+            for cell in row:
+                if cell is None:
+                    continue
+                text = str(cell).strip()
+                if text:
+                    ddl_lines.append(text)
+        return "\n".join(ddl_lines)
+
+    def _parse_primary_keys_from_ddl(self, ddl_text: str) -> List[str]:
+        """从DDL中解析主键列"""
+        # 示例:
+        # PRIMARY KEY (`id`)
+        # CONSTRAINT pk_x PRIMARY KEY (id1, id2) DISABLE NOVALIDATE
+        match = re.search(r"PRIMARY\s+KEY\s*\((.*?)\)", ddl_text, re.IGNORECASE | re.DOTALL)
+        if not match:
+            return []
+
+        raw_cols = match.group(1)
+        cols = []
+        for item in raw_cols.split(","):
+            col = item.strip().strip("`").strip('"')
+            if col:
+                cols.append(col)
+        return cols

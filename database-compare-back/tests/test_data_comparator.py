@@ -17,6 +17,12 @@ class StubConnector:
     def get_columns(self, table_name: str) -> List[ColumnInfo]:
         return self._columns
 
+    def get_row_count(self, table_name: str, where_clause: str = None) -> int:
+        rows = list(self._rows)
+        if where_clause:
+            rows = self._apply_where(rows, where_clause)
+        return len(rows)
+
     def fetch_data(self, table_name: str, columns: Optional[List[str]] = None,
                    where_clause: str = None, order_by: List[str] = None,
                    offset: int = 0, limit: int = 1000) -> List[Dict[str, Any]]:
@@ -135,3 +141,32 @@ def test_compare_data_target_lookup_not_limited_to_default_1000_rows():
 
     assert diffs == []
     assert row_count in target.fetch_limits
+
+
+def test_compare_data_emits_row_count_before_row_level_diffs_and_detects_target_extra():
+    columns = [
+        ColumnInfo(name="id", data_type="int"),
+        ColumnInfo(name="username", data_type="varchar"),
+    ]
+    source_rows = [
+        {"id": 1, "username": "alice"},
+        {"id": 2, "username": "bob"},
+    ]
+    target_rows = [
+        {"id": 2, "username": "bob-new"},
+        {"id": 3, "username": "carol"},
+        {"id": 4, "username": "dave"},
+    ]
+
+    comparator = DataComparator(
+        StubConnector(columns, source_rows),
+        StubConnector(columns, target_rows),
+        {"page_size": 100},
+    )
+    diffs = comparator.compare_data("users", ["id"], max_diffs=50)
+
+    assert diffs
+    assert diffs[0].diff_type == DataDiffType.ROW_COUNT_DIFF
+    assert any(d.diff_type == DataDiffType.ROW_MISSING_IN_TARGET and d.primary_key == {"id": 1} for d in diffs)
+    assert any(d.diff_type == DataDiffType.VALUE_DIFF and d.primary_key == {"id": 2} for d in diffs)
+    assert any(d.diff_type == DataDiffType.ROW_EXTRA_IN_TARGET and d.primary_key == {"id": 3} for d in diffs)

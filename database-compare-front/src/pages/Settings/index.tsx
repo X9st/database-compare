@@ -1,12 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Tabs, Form, InputNumber, Switch, Button, Card, message, Spin } from 'antd';
+import { Tabs, Form, InputNumber, Switch, Button, Card, message, Spin, Table, Modal, Input, Space } from 'antd';
 import IgnoreRules from './IgnoreRules';
-import { settingsApi } from '@/services/settingsApi';
+import { settingsApi, CompareTemplate } from '@/services/settingsApi';
 
 const Settings: React.FC = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [templates, setTemplates] = useState<CompareTemplate[]>([]);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateModalVisible, setTemplateModalVisible] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
+  const [templateConfig, setTemplateConfig] = useState('{\n  "source_id": "",\n  "target_id": "",\n  "table_selection": { "mode": "all", "tables": [] },\n  "options": { "mode": "full" }\n}');
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -20,6 +27,7 @@ const Settings: React.FC = () => {
           compare_timeout: data.compare_timeout || 3600,
           max_diff_display: data.max_diff_display || 1000,
           history_retention_days: data.history_retention_days || 90,
+          history_max_count: data.history_max_count || 500,
           auto_cleanup_enabled: data.auto_cleanup_enabled ?? true,
         });
       }
@@ -32,6 +40,7 @@ const Settings: React.FC = () => {
         compare_timeout: 3600,
         max_diff_display: 1000,
         history_retention_days: 90,
+        history_max_count: 500,
         auto_cleanup_enabled: true,
       });
     } finally {
@@ -41,7 +50,20 @@ const Settings: React.FC = () => {
 
   useEffect(() => {
     fetchSettings();
+    fetchTemplates();
   }, []);
+
+  const fetchTemplates = async () => {
+    setTemplateLoading(true);
+    try {
+      const response = await settingsApi.getTemplates();
+      setTemplates(response.data?.data || []);
+    } catch (e) {
+      setTemplates([]);
+    } finally {
+      setTemplateLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     try {
@@ -53,6 +75,7 @@ const Settings: React.FC = () => {
         compare_timeout: values.compare_timeout,
         max_diff_display: values.max_diff_display,
         history_retention_days: values.history_retention_days,
+        history_max_count: values.history_max_count,
         auto_cleanup_enabled: values.auto_cleanup_enabled,
       });
       message.success('设置保存成功');
@@ -60,6 +83,77 @@ const Settings: React.FC = () => {
       message.error('保存失败');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openCreateTemplate = () => {
+    setEditingTemplateId(null);
+    setTemplateName('');
+    setTemplateDescription('');
+    setTemplateConfig('{\n  "source_id": "",\n  "target_id": "",\n  "table_selection": { "mode": "all", "tables": [] },\n  "options": { "mode": "full" }\n}');
+    setTemplateModalVisible(true);
+  };
+
+  const openEditTemplate = (template: CompareTemplate) => {
+    setEditingTemplateId(template.id);
+    setTemplateName(template.name);
+    setTemplateDescription(template.description || '');
+    setTemplateConfig(JSON.stringify(template.config || {}, null, 2));
+    setTemplateModalVisible(true);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!templateName.trim()) {
+      message.warning('请输入模板名称');
+      return;
+    }
+    let parsedConfig: Record<string, any> = {};
+    try {
+      parsedConfig = JSON.parse(templateConfig);
+    } catch {
+      message.error('模板配置 JSON 格式不合法');
+      return;
+    }
+    try {
+      if (editingTemplateId) {
+        await settingsApi.updateTemplate(editingTemplateId, {
+          name: templateName.trim(),
+          description: templateDescription || undefined,
+          config: parsedConfig,
+        });
+        message.success('模板更新成功');
+      } else {
+        await settingsApi.createTemplate({
+          name: templateName.trim(),
+          description: templateDescription || undefined,
+          config: parsedConfig,
+        });
+        message.success('模板创建成功');
+      }
+      setTemplateModalVisible(false);
+      fetchTemplates();
+    } catch {
+      message.error('模板保存失败');
+    }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    try {
+      await settingsApi.deleteTemplate(id);
+      message.success('模板删除成功');
+      fetchTemplates();
+    } catch {
+      message.error('模板删除失败');
+    }
+  };
+
+  const handleCreateTaskByTemplate = async (id: string) => {
+    try {
+      const response = await settingsApi.createTaskFromTemplate(id, {});
+      const task_id = response.data?.data?.task_id;
+      message.success(`任务已创建: ${task_id}`);
+    } catch {
+      message.error('按模板建任务失败');
     }
   };
 
@@ -113,6 +207,13 @@ const Settings: React.FC = () => {
                 >
                   <InputNumber min={7} max={365} style={{ width: '100%' }} />
                 </Form.Item>
+                <Form.Item
+                  name="history_max_count"
+                  label="历史记录最大保留条数"
+                  tooltip="超过条数上限后，自动删除更旧的历史记录"
+                >
+                  <InputNumber min={50} max={50000} style={{ width: '100%' }} />
+                </Form.Item>
                 <Form.Item>
                   <Button type="primary" onClick={handleSave} loading={saving}>
                     保存设置
@@ -123,6 +224,57 @@ const Settings: React.FC = () => {
           </Tabs.TabPane>
           <Tabs.TabPane tab="全局忽略规则" key="2">
             <IgnoreRules />
+          </Tabs.TabPane>
+          <Tabs.TabPane tab="比对模板" key="3">
+            <div style={{ marginBottom: 12 }}>
+              <Button type="primary" onClick={openCreateTemplate}>新增模板</Button>
+            </div>
+            <Table
+              rowKey="id"
+              loading={templateLoading}
+              dataSource={templates}
+              columns={[
+                { title: '模板名称', dataIndex: 'name' },
+                { title: '描述', dataIndex: 'description', render: (value: string) => value || '-' },
+                { title: '创建时间', dataIndex: 'created_at', width: 180 },
+                {
+                  title: '操作',
+                  width: 280,
+                  render: (_: unknown, record: CompareTemplate) => (
+                    <Space>
+                      <Button type="link" onClick={() => openEditTemplate(record)}>编辑</Button>
+                      <Button type="link" onClick={() => handleCreateTaskByTemplate(record.id)}>按模板建任务</Button>
+                      <Button type="link" danger onClick={() => handleDeleteTemplate(record.id)}>删除</Button>
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+            <Modal
+              title={editingTemplateId ? '编辑模板' : '新增模板'}
+              open={templateModalVisible}
+              onCancel={() => setTemplateModalVisible(false)}
+              onOk={handleSaveTemplate}
+              width={780}
+            >
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Input
+                  placeholder="模板名称"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                />
+                <Input
+                  placeholder="模板描述（可选）"
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                />
+                <Input.TextArea
+                  rows={14}
+                  value={templateConfig}
+                  onChange={(e) => setTemplateConfig(e.target.value)}
+                />
+              </Space>
+            </Modal>
           </Tabs.TabPane>
         </Tabs>
       </Card>

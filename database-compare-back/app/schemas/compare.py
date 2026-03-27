@@ -26,11 +26,26 @@ class TableMapping(BaseModel):
     column_mappings: Optional[List[ColumnMapping]] = None
 
 
+class TablePrimaryKeyConfig(BaseModel):
+    """业务主键配置（用于无法自动识别主键的场景）"""
+    source_table: str
+    primary_keys: List[str] = Field(..., description="源表业务主键字段")
+    target_table: Optional[str] = Field(None, description="目标表名（可选）")
+    target_primary_keys: Optional[List[str]] = Field(
+        None,
+        description="目标表主键字段（可选，字段名不一致时配置）"
+    )
+
+
 class IncrementalConfig(BaseModel):
     """增量配置"""
-    time_column: str = Field(..., description="时间字段名")
+    time_column: Optional[str] = Field(None, description="源表时间字段名")
     start_time: Optional[str] = Field(None, description="开始时间")
     end_time: Optional[str] = Field(None, description="结束时间")
+    target_time_column: Optional[str] = Field(None, description="目标表时间字段名（可选）")
+    batch_column: Optional[str] = Field(None, description="源表批次字段（可选）")
+    batch_value: Optional[str] = Field(None, description="批次值（可选）")
+    target_batch_column: Optional[str] = Field(None, description="目标表批次字段（可选）")
 
 
 class StructureOptions(BaseModel):
@@ -53,10 +68,12 @@ class DataOptions(BaseModel):
 class CompareOptions(BaseModel):
     """比对选项"""
     mode: str = Field("full", description="比对模式：full/incremental")
+    resume_from_checkpoint: bool = Field(True, description="是否启用7天内断点续比")
     incremental_config: Optional[IncrementalConfig] = None
     structure_options: Optional[StructureOptions] = None
     data_options: Optional[DataOptions] = None
     table_mappings: Optional[List[TableMapping]] = None
+    table_primary_keys: Optional[List[TablePrimaryKeyConfig]] = None
     ignore_rules: Optional[List[str]] = Field(None, description="忽略规则ID列表")
 
 
