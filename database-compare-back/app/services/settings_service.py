@@ -306,7 +306,8 @@ class SettingsService:
                 "username": item.username,
                 "password_encrypted": item.password_encrypted,
                 "charset": item.charset,
-                "timeout": item.timeout
+                "timeout": item.timeout,
+                "extra_config": item.extra_config,
             } for item in datasources]
 
         if data.include_templates:
@@ -405,9 +406,18 @@ class SettingsService:
     def _import_datasources(self, datasources: List[Dict[str, Any]]) -> int:
         count = 0
         for item in datasources or []:
-            required = ["name", "db_type", "host", "port", "database", "username"]
-            if any(item.get(field) in (None, "") for field in required):
+            db_type = str(item.get("db_type") or "").strip().lower()
+            if not item.get("name") or not db_type:
                 continue
+
+            is_file_source = db_type in {"excel", "dbf"}
+            if is_file_source:
+                if not isinstance(item.get("extra_config"), dict):
+                    continue
+            else:
+                required = ["host", "port", "database", "username"]
+                if any(item.get(field) in (None, "") for field in required):
+                    continue
 
             datasource = None
             if item.get("id"):
@@ -415,11 +425,11 @@ class SettingsService:
             if not datasource:
                 datasource = self.db.query(DataSource).filter(
                     DataSource.name == item["name"],
-                    DataSource.db_type == item["db_type"],
-                    DataSource.host == item["host"],
-                    DataSource.port == item["port"],
-                    DataSource.database == item["database"],
-                    DataSource.username == item["username"]
+                    DataSource.db_type == db_type,
+                    DataSource.host == item.get("host", "local-file" if is_file_source else ""),
+                    DataSource.port == item.get("port", 0 if is_file_source else None),
+                    DataSource.database == item.get("database", item["name"]),
+                    DataSource.username == item.get("username", "file_user" if is_file_source else ""),
                 ).first()
             if not datasource:
                 datasource = DataSource(id=item.get("id") or str(uuid.uuid4()))
@@ -427,18 +437,21 @@ class SettingsService:
 
             datasource.name = item["name"]
             datasource.group_id = item.get("group_id")
-            datasource.db_type = item["db_type"]
-            datasource.host = item["host"]
-            datasource.port = item["port"]
-            datasource.database = item["database"]
+            datasource.db_type = db_type
+            datasource.host = item.get("host", "local-file" if is_file_source else datasource.host)
+            datasource.port = item.get("port", 0 if is_file_source else datasource.port)
+            datasource.database = item.get("database", item["name"])
             datasource.schema = item.get("schema")
-            datasource.username = item["username"]
+            datasource.username = item.get("username", "file_user" if is_file_source else datasource.username)
             if item.get("password_encrypted"):
                 datasource.password_encrypted = item["password_encrypted"]
             elif item.get("password"):
                 datasource.password_encrypted = encrypt(item["password"])
+            elif is_file_source and not datasource.password_encrypted:
+                datasource.password_encrypted = encrypt("")
             datasource.charset = item.get("charset", datasource.charset or "UTF-8")
             datasource.timeout = item.get("timeout", datasource.timeout or 30)
+            datasource.extra_config = item.get("extra_config")
             count += 1
         return count
 

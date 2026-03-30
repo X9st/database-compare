@@ -95,6 +95,105 @@ def test_compare_start_returns_snake_case_task_id():
         _delete_datasource_records(source_id, target_id)
 
 
+def test_datasource_file_upload_endpoint_accepts_excel():
+    client = _build_client()
+    resp = client.post(
+        "/api/v1/datasources/files/upload",
+        files={"file": ("report.xlsx", b"fake-excel-content", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()["data"]
+    assert payload["original_name"] == "report.xlsx"
+    assert payload["file_type"] == "xlsx"
+    assert payload["storage_key"].endswith(".xlsx")
+
+
+def test_create_remote_dataset_endpoint(monkeypatch):
+    client = _build_client()
+
+    def _fake_create_remote_dataset(self, _request):
+        now = datetime.utcnow().isoformat()
+        return {
+            "id": "remote-ds-1",
+            "name": "remote-dataset",
+            "group_id": None,
+            "group_name": None,
+            "db_type": "dbf",
+            "host": "local-file",
+            "port": 0,
+            "database": "dataset",
+            "schema": None,
+            "username": "file_user",
+            "charset": "UTF-8",
+            "timeout": 30,
+            "extra_config": {
+                "mode": "remote_dataset",
+                "sftp": {"host": "10.0.0.1", "port": 22, "username": "user", "base_dir": "/inbound"},
+                "snapshot": {
+                    "dataset_root": "data/uploads/datasets/remote-ds-1/snapshot_x",
+                    "table_index": {"orders": {"storage_key": "/tmp/orders.dbf", "file_type": "dbf"}},
+                    "file_count": 1,
+                    "table_count": 1,
+                    "failed_files": [],
+                    "last_refresh_at": now,
+                },
+            },
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    monkeypatch.setattr(
+        "app.services.datasource_service.DataSourceService.create_remote_dataset",
+        _fake_create_remote_dataset,
+    )
+
+    resp = client.post(
+        "/api/v1/datasources/remote-datasets",
+        json={
+            "name": "remote-dataset",
+            "db_type": "dbf",
+            "extra_config": {
+                "mode": "remote_dataset",
+                "file_type": "dbf",
+                "sftp": {
+                    "host": "10.0.0.1",
+                    "port": 22,
+                    "username": "user",
+                    "password": "pwd",
+                    "base_dir": "/inbound",
+                },
+            },
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["extra_config"]["mode"] == "remote_dataset"
+
+
+def test_refresh_remote_dataset_endpoint(monkeypatch):
+    client = _build_client()
+
+    def _fake_refresh(self, ds_id: str):
+        return {
+            "datasource_id": ds_id,
+            "file_count": 2,
+            "table_count": 3,
+            "failed_files": [{"file_name": "bad.dbf", "error": "decode failed"}],
+            "last_refresh_at": datetime.utcnow().isoformat(),
+        }
+
+    monkeypatch.setattr(
+        "app.services.datasource_service.DataSourceService.refresh_remote_dataset",
+        _fake_refresh,
+    )
+
+    resp = client.post("/api/v1/datasources/any-id/refresh")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["file_count"] == 2
+    assert len(data["failed_files"]) == 1
+
+
 def test_settings_export_import_roundtrip():
     client = _build_client()
 

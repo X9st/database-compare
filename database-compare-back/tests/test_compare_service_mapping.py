@@ -216,3 +216,47 @@ def test_resolve_primary_keys_rejects_mismatched_target_key_count():
     assert pk_mapping == {}
     assert error is not None
     assert "数量不一致" in error
+
+
+def test_get_existence_target_tables_limits_scope_for_include_mode():
+    service = _build_service()
+    target_conn = StubConnector(["users", "orders", "audit_log"])
+    compare_plan = [
+        {"source_table": "users", "target_table": "users"},
+        {"source_table": "orders", "target_table": "orders"},
+    ]
+
+    targets = service._get_existence_target_tables("include", compare_plan, target_conn)
+    assert set(targets) == {"users", "orders"}
+
+
+def test_get_existence_target_tables_keeps_full_target_set_for_all_mode():
+    service = _build_service()
+    target_conn = StubConnector(["users", "orders", "audit_log"])
+    compare_plan = [
+        {"source_table": "users", "target_table": "users"},
+    ]
+
+    targets = service._get_existence_target_tables("all", compare_plan, target_conn)
+    assert set(targets) == {"users", "orders", "audit_log"}
+
+
+def test_apply_runtime_data_defaults_uses_system_default_page_size_when_missing():
+    service = _build_service()
+    runtime_settings = {"default_page_size": 4096}
+
+    merged = service._apply_runtime_data_defaults({}, runtime_settings)
+    assert merged["page_size"] == 4096
+
+    merged_with_explicit = service._apply_runtime_data_defaults({"page_size": 2000}, runtime_settings)
+    assert merged_with_explicit["page_size"] == 2000
+
+
+def test_validate_file_source_config_rejects_incremental_mode():
+    service = _build_service()
+    source_ds = type("Ds", (), {"db_type": "excel"})()
+    target_ds = type("Ds", (), {"db_type": "mysql"})()
+    config = {"options": {"mode": "incremental"}}
+
+    with pytest.raises(ValueError, match="仅支持全量比对"):
+        service._validate_file_source_config(source_ds, target_ds, config)

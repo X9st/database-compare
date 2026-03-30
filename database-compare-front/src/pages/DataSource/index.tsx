@@ -7,7 +7,7 @@ import DataSourceForm from './DataSourceForm';
 import styles from './index.module.less';
 
 const DataSource: React.FC = () => {
-  const { dataSources, groups, loading, fetchDataSources, deleteDataSource, testConnection, fetchGroups, addGroup, updateGroup, deleteGroup } = 
+  const { dataSources, groups, loading, fetchDataSources, deleteDataSource, testConnection, refreshRemoteDataset, fetchGroups, addGroup, updateGroup, deleteGroup } = 
     useDataSourceStore();
   const [formVisible, setFormVisible] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -43,6 +43,17 @@ const DataSource: React.FC = () => {
       message.success(`连接成功，延迟: ${result.latency}ms`);
     } else {
       message.error(`连接失败: ${result.message}`);
+    }
+  };
+
+  const handleRefresh = async (id: string) => {
+    try {
+      const result = await refreshRemoteDataset(id);
+      const failedCount = result.failed_files?.length || 0;
+      message.success(`刷新完成：文件 ${result.file_count}，表 ${result.table_count}，失败 ${failedCount}`);
+    } catch (e: any) {
+      const backendMessage = e?.response?.data?.detail || e?.response?.data?.message || e?.message;
+      message.error(`刷新失败: ${backendMessage || '未知错误'}`);
     }
   };
 
@@ -108,6 +119,7 @@ const DataSource: React.FC = () => {
         onEdit={handleEdit}
         onDelete={handleDelete}
         onTest={handleTest}
+        onRefresh={handleRefresh}
       />
 
       <DataSourceForm

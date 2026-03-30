@@ -11,11 +11,11 @@ class ConnectorFactory:
     # 懒加载连接器，避免未使用驱动阻塞其它数据库。
     _connector_specs: Dict[str, Tuple[str, str]] = {
         "mysql": (".mysql", "MySQLConnector"),
-        "postgresql": (".postgresql", "PostgreSQLConnector"),
         "oracle": (".oracle", "OracleConnector"),
-        "sqlserver": (".sqlserver", "SQLServerConnector"),
         "dm": (".dm", "DMConnector"),
         "inceptor": (".inceptor", "InceptorConnector"),
+        "excel": (".excel", "ExcelConnector"),
+        "dbf": (".dbf", "DBFConnector"),
     }
     _connectors: Dict[str, Type[BaseConnector]] = {}
 

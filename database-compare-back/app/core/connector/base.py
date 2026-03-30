@@ -52,7 +52,8 @@ class BaseConnector(ABC):
     
     def __init__(self, host: str, port: int, database: str, 
                  username: str, password: str, schema: str = None,
-                 charset: str = "UTF-8", timeout: int = 30):
+                 charset: str = "UTF-8", timeout: int = 30,
+                 extra_config: Optional[Dict[str, Any]] = None):
         self.host = host
         self.port = port
         self.database = database
@@ -61,7 +62,13 @@ class BaseConnector(ABC):
         self.schema = schema
         self.charset = charset
         self.timeout = timeout
+        self.extra_config = extra_config or {}
+        self.source_kind = "database"
         self._connection = None
+
+    @property
+    def is_file_source(self) -> bool:
+        return self.source_kind == "file"
     
     @abstractmethod
     def connect(self) -> bool:

@@ -1,0 +1,88 @@
+name: Enterprise Connector Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_dm:
+        description: "Run DM smoke test"
+        required: false
+        default: false
+        type: boolean
+      run_inceptor:
+        description: "Run Inceptor smoke test"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  dm-smoke:
+    if: ${{ github.event.inputs.run_dm == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      DM_HOST: ${{ secrets.DM_HOST }}
+      DM_PORT: ${{ secrets.DM_PORT }}
+      DM_DATABASE: ${{ secrets.DM_DATABASE }}
+      DM_SCHEMA: ${{ secrets.DM_SCHEMA }}
+      DM_USERNAME: ${{ secrets.DM_USERNAME }}
+      DM_PASSWORD: ${{ secrets.DM_PASSWORD }}
+      DM_TABLE: ${{ secrets.DM_TABLE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps
+        run: |
+          cd database-compare-back
+          pip install -r requirements.txt
+
+      - name: Run DM smoke test
+        run: |
+          cd database-compare-back
+          python scripts/dm_smoke_test.py \
+            --host "${DM_HOST}" \
+            --port "${DM_PORT:-5236}" \
+            --database "${DM_DATABASE:-DMTEST}" \
+            --schema "${DM_SCHEMA:-QA_COMPARE}" \
+            --username "${DM_USERNAME}" \
+            --password "${DM_PASSWORD}" \
+            --table "${DM_TABLE:-CMP_USER}"
+
+  inceptor-smoke:
+    if: ${{ github.event.inputs.run_inceptor == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      INCEPTOR_HOST: ${{ secrets.INCEPTOR_HOST }}
+      INCEPTOR_PORT: ${{ secrets.INCEPTOR_PORT }}
+      INCEPTOR_DATABASE: ${{ secrets.INCEPTOR_DATABASE }}
+      INCEPTOR_USERNAME: ${{ secrets.INCEPTOR_USERNAME }}
+      INCEPTOR_PASSWORD: ${{ secrets.INCEPTOR_PASSWORD }}
+      INCEPTOR_TABLE: ${{ secrets.INCEPTOR_TABLE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps
+        run: |
+          cd database-compare-back
+          pip install -r requirements.txt
+
+      - name: Run Inceptor smoke test
+        run: |
+          cd database-compare-back
+          python scripts/inceptor_smoke_test.py \
+            --host "${INCEPTOR_HOST}" \
+            --port "${INCEPTOR_PORT:-10000}" \
+            --database "${INCEPTOR_DATABASE:-default}" \
+            --username "${INCEPTOR_USERNAME}" \
+            --password "${INCEPTOR_PASSWORD}" \
+            --table "${INCEPTOR_TABLE:-cmp_user}"

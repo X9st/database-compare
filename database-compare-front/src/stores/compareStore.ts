@@ -28,7 +28,8 @@ export const useCompareStore = create<CompareState>((set, get) => ({
       mode: 'full',
       resume_from_checkpoint: true,
       structure_options: { compare_index: true, compare_constraint: true, compare_comment: true },
-      data_options: { float_precision: 6, ignore_case: false, trim_whitespace: true, datetime_precision: 'second', skip_large_fields: false, page_size: 1000 },
+      // page_size=0 表示交由后端系统设置 default_page_size 决定
+      data_options: { float_precision: 6, ignore_case: false, trim_whitespace: true, datetime_precision: 'second', skip_large_fields: false, page_size: 0 },
       table_mappings: [],
       table_primary_keys: [],
       ignore_rules: []

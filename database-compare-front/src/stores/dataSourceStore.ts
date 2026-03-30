@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { dataSourceApi } from '@/services/dataSourceApi';
-import { DataSource, DataSourceGroup, CreateDataSourceDto, TestConnectionResult } from '@/types';
+import {
+  DataSource,
+  DataSourceGroup,
+  CreateDataSourceDto,
+  CreateRemoteDatasetDto,
+  RemoteDatasetRefreshResult,
+  TestConnectionResult,
+} from '@/types';
 
 interface DataSourceState {
   dataSources: DataSource[];
@@ -9,7 +16,9 @@ interface DataSourceState {
   
   fetchDataSources: () => Promise<void>;
   addDataSource: (data: CreateDataSourceDto) => Promise<void>;
+  addRemoteDataset: (data: CreateRemoteDatasetDto) => Promise<void>;
   updateDataSource: (id: string, data: Partial<CreateDataSourceDto>) => Promise<void>;
+  refreshRemoteDataset: (id: string) => Promise<RemoteDatasetRefreshResult>;
   deleteDataSource: (id: string) => Promise<void>;
   testConnection: (id: string) => Promise<TestConnectionResult>;
   
@@ -50,6 +59,16 @@ export const useDataSourceStore = create<DataSourceState>((set) => ({
     }
   },
 
+  addRemoteDataset: async (data) => {
+    const response = await dataSourceApi.createRemoteDataset(data);
+    const created = response.data?.data;
+    if (created) {
+      set((state) => ({
+        dataSources: [created, ...state.dataSources.filter((item) => item.id !== created.id)],
+      }));
+    }
+  },
+
   updateDataSource: async (id, data) => {
     const response = await dataSourceApi.update(id, data);
     const updated = response.data?.data;
@@ -65,6 +84,21 @@ export const useDataSourceStore = create<DataSourceState>((set) => ({
     set((state) => ({
       dataSources: state.dataSources.filter((ds) => ds.id !== id),
     }));
+  },
+
+  refreshRemoteDataset: async (id) => {
+    const response = await dataSourceApi.refreshRemoteDataset(id);
+    const result = response.data?.data;
+    await useDataSourceStore.getState().fetchDataSources();
+    return (
+      result || {
+        datasource_id: id,
+        file_count: 0,
+        table_count: 0,
+        failed_files: [],
+        last_refresh_at: new Date().toISOString(),
+      }
+    );
   },
 
   testConnection: async (id) => {

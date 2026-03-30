@@ -105,6 +105,18 @@ class DataComparator:
 
         source_fetch_columns = self._merge_columns(compare_columns + primary_keys)
         target_pk_columns = [effective_mapping.get(pk, pk) for pk in primary_keys]
+
+        if getattr(self.source_conn, "is_file_source", False) or getattr(self.target_conn, "is_file_source", False):
+            return self._compare_data_with_file_source(
+                table_name=table_name,
+                target_table=target_table,
+                primary_keys=primary_keys,
+                compare_columns=compare_columns,
+                source_fetch_columns=source_fetch_columns,
+                target_pk_columns=target_pk_columns,
+                effective_mapping=effective_mapping,
+                max_diffs=max_diffs,
+            )
         
         # 构建排序字段
         order_by = primary_keys.copy()
@@ -204,6 +216,119 @@ class DataComparator:
                 max_diffs=max_diffs
             )
         
+        return diffs
+
+    def _compare_data_with_file_source(
+        self,
+        table_name: str,
+        target_table: str,
+        primary_keys: List[str],
+        compare_columns: List[str],
+        source_fetch_columns: List[str],
+        target_pk_columns: List[str],
+        effective_mapping: Dict[str, str],
+        max_diffs: int,
+    ) -> List[DataDiff]:
+        """文件数据源回退比对：不依赖 SQL where 下推。"""
+        diffs: List[DataDiff] = []
+        row_count_diff = self.compare_row_count(table_name=table_name, target_table=target_table)
+        if row_count_diff:
+            diffs.append(row_count_diff)
+            if len(diffs) >= max_diffs:
+                return diffs
+
+        target_fetch_columns = self._merge_columns([effective_mapping.get(c, c) for c in source_fetch_columns])
+        target_map: Dict[str, Dict[str, Any]] = {}
+        target_offset = 0
+        while True:
+            target_rows = self.target_conn.fetch_data(
+                target_table,
+                columns=target_fetch_columns,
+                where_clause=None,
+                order_by=target_pk_columns,
+                offset=target_offset,
+                limit=self.page_size,
+            )
+            if not target_rows:
+                break
+            for row in target_rows:
+                key = self._pk_to_key(self._extract_pk_with_mapping(row, primary_keys, effective_mapping))
+                target_map[key] = row
+            target_offset += self.page_size
+
+        source_pk_set = set()
+        source_offset = 0
+        while len(diffs) < max_diffs:
+            source_rows = self.source_conn.fetch_data(
+                table_name,
+                columns=source_fetch_columns,
+                where_clause=None,
+                order_by=primary_keys,
+                offset=source_offset,
+                limit=self.page_size,
+            )
+            if not source_rows:
+                break
+
+            for source_row in source_rows:
+                if len(diffs) >= max_diffs:
+                    break
+                pk = self._extract_pk(source_row, primary_keys)
+                pk_key = self._pk_to_key(pk)
+                source_pk_set.add(pk_key)
+                target_row = target_map.get(pk_key)
+                if target_row is None:
+                    diffs.append(
+                        DataDiff(
+                            table_name=table_name,
+                            primary_key=pk,
+                            diff_type=DataDiffType.ROW_MISSING_IN_TARGET,
+                            diff_columns=[],
+                            source_values=self._serialize_row(source_row),
+                        )
+                    )
+                    continue
+
+                diff_columns = []
+                for col in compare_columns:
+                    target_col = effective_mapping.get(col, col)
+                    if not self._values_equal(source_row.get(col), target_row.get(target_col)):
+                        diff_columns.append(col)
+                if diff_columns:
+                    is_null_diff = any(
+                        (source_row.get(c) is None) != (target_row.get(effective_mapping.get(c, c)) is None)
+                        for c in diff_columns
+                    )
+                    diffs.append(
+                        DataDiff(
+                            table_name=table_name,
+                            primary_key=pk,
+                            diff_type=DataDiffType.NULL_DIFF if is_null_diff else DataDiffType.VALUE_DIFF,
+                            diff_columns=diff_columns,
+                            source_values={c: self._serialize_value(source_row.get(c)) for c in diff_columns},
+                            target_values={
+                                c: self._serialize_value(target_row.get(effective_mapping.get(c, c)))
+                                for c in diff_columns
+                            },
+                        )
+                    )
+            source_offset += self.page_size
+
+        if len(diffs) < max_diffs:
+            for key, target_row in target_map.items():
+                if len(diffs) >= max_diffs:
+                    break
+                if key in source_pk_set:
+                    continue
+                diffs.append(
+                    DataDiff(
+                        table_name=table_name,
+                        primary_key=self._extract_pk_with_mapping(target_row, primary_keys, effective_mapping),
+                        diff_type=DataDiffType.ROW_EXTRA_IN_TARGET,
+                        diff_columns=[],
+                        target_values=self._serialize_row(target_row),
+                    )
+                )
         return diffs
     
     def _values_equal(self, source_val: Any, target_val: Any) -> bool:

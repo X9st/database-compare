@@ -10,7 +10,12 @@
 - FastAPI
 - SQLAlchemy 2.0
 - SQLite
-- PyMySQL / psycopg2
+- PyMySQL / oracledb / dmPython / pyhive
+
+## 支持的数据源类型
+
+- 数据库：`mysql`、`oracle`、`dm`、`inceptor`
+- 文件：`excel`（`.xlsx/.xls`）、`dbf`
 
 ## 快速开始
 
@@ -85,6 +90,7 @@ database-compare-back/
 ### 数据源管理
 - `GET /api/v1/datasources` - 获取数据源列表
 - `POST /api/v1/datasources` - 创建数据源
+- `POST /api/v1/datasources/files/upload` - 上传 Excel/DBF 数据源文件
 - `PUT /api/v1/datasources/{id}` - 更新数据源
 - `DELETE /api/v1/datasources/{id}` - 删除数据源
 - `POST /api/v1/datasources/{id}/test` - 测试连接

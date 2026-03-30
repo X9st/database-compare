@@ -13,12 +13,12 @@ pydantic-settings==2.1.0
 # 数据库驱动
 pymysql==1.1.0
 oracledb==2.0.0
-pymssql==2.2.11
-psycopg2-binary==2.9.9
-asyncpg==0.29.0
 pyhive==0.7.0
 thrift==0.16.0
 thrift_sasl==0.4.3
+xlrd==2.0.1
+dbfread==2.0.7
+paramiko==3.5.0
 
 # 加密
 cryptography==41.0.7

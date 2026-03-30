@@ -128,7 +128,7 @@ class UnsupportedDatabaseError(AppException):
     """不支持的数据库类型异常"""
     
     def __init__(self, db_type: str):
-        supported_types = ['mysql', 'postgresql', 'oracle', 'sqlserver', 'dm', 'inceptor']
+        supported_types = ['mysql', 'oracle', 'dm', 'inceptor', 'excel', 'dbf']
         super().__init__(
             f"不支持的数据库类型: {db_type}。支持的类型: {', '.join(supported_types)}",
             code=1011,

@@ -185,11 +185,11 @@ POST /datasources
 |------|------|------|------|
 | name | string | 是 | 数据源名称，最长100字符 |
 | group_id | string | 否 | 所属分组ID |
-| db_type | string | 是 | 数据库类型：mysql/oracle/sqlserver/postgresql/dm/inceptor |
+| db_type | string | 是 | 数据库类型：mysql/oracle/dm/inceptor/excel/dbf |
 | host | string | 是 | 主机地址 |
 | port | integer | 是 | 端口号 |
 | database | string | 是 | 数据库名 |
-| schema | string | 否 | Schema名（Oracle/PostgreSQL需要） |
+| schema | string | 否 | Schema名（Oracle需要） |
 | username | string | 是 | 用户名 |
 | password | string | 是 | 密码 |
 | charset | string | 否 | 字符集，默认UTF-8 |

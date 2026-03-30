@@ -73,7 +73,8 @@ class StructureComparator:
     def compare_columns(self, table_name: str, 
                         source_columns: List[ColumnInfo],
                         target_columns: List[ColumnInfo],
-                        column_mapping: Optional[Dict[str, str]] = None) -> List[StructureDiff]:
+                        column_mapping: Optional[Dict[str, str]] = None,
+                        lightweight: bool = False) -> List[StructureDiff]:
         """比对字段"""
         diffs = []
         column_mapping = column_mapping or {}
@@ -109,6 +110,9 @@ class StructureComparator:
                 ))
         
         # 比对共有字段的属性
+        if lightweight:
+            return diffs
+
         for col_name, src_col in source_map.items():
             mapped_target_name = self._get_mapped_column_name(src_col.name, column_mapping)
             target_key = mapped_target_name.lower()
@@ -189,11 +193,23 @@ class StructureComparator:
         """比对单表结构"""
         target_table = table_mapping.get(table_name, table_name) if table_mapping else table_name
         diffs = []
+        lightweight = bool(getattr(self.source_conn, "is_file_source", False) or getattr(self.target_conn, "is_file_source", False))
         
         # 获取字段信息
         source_columns = self.source_conn.get_columns(table_name)
         target_columns = self.target_conn.get_columns(target_table)
-        diffs.extend(self.compare_columns(table_name, source_columns, target_columns, column_mapping=column_mapping))
+        diffs.extend(
+            self.compare_columns(
+                table_name,
+                source_columns,
+                target_columns,
+                column_mapping=column_mapping,
+                lightweight=lightweight,
+            )
+        )
+
+        if lightweight:
+            return diffs
 
         if self.compare_comment:
             source_comment = self._get_table_comment(table_name, source=True)

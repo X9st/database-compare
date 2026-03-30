@@ -209,17 +209,16 @@ def normalize_db_type(db_type: str) -> str:
     mapping = {
         'mysql': 'mysql',
         'mariadb': 'mysql',
-        'postgres': 'postgresql',
-        'postgresql': 'postgresql',
-        'pg': 'postgresql',
         'oracle': 'oracle',
-        'sqlserver': 'sqlserver',
-        'mssql': 'sqlserver',
         'dm': 'dm',
         'dameng': 'dm',
         '达梦': 'dm',
         'inceptor': 'inceptor',
         'transwarp': 'inceptor',
+        'excel': 'excel',
+        'xlsx': 'excel',
+        'xls': 'excel',
+        'dbf': 'dbf',
     }
     return mapping.get(db_type.lower(), db_type.lower())
 

@@ -1,13 +1,17 @@
 """数据源API"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.db.session import get_db
 from app.services.datasource_service import DataSourceService
 from app.schemas.datasource import (
-    CreateDataSourceRequest, UpdateDataSourceRequest,
-    TestConnectionRequest, CreateGroupRequest, UpdateGroupRequest
+    CreateDataSourceRequest,
+    CreateGroupRequest,
+    CreateRemoteDatasetRequest,
+    TestConnectionRequest,
+    UpdateDataSourceRequest,
+    UpdateGroupRequest,
 )
 from app.schemas.common import Response
 
@@ -33,6 +37,17 @@ async def get_datasources(
     return Response(data=data)
 
 
+@router.post("/files/upload")
+async def upload_datasource_file(
+    file: UploadFile = File(...),
+    service: DataSourceService = Depends(get_service),
+):
+    """上传数据源文件（Excel/DBF）"""
+    content = await file.read()
+    data = service.upload_datasource_file(filename=file.filename or "", content=content)
+    return Response(message="上传成功", data=data)
+
+
 @router.get("/{ds_id}")
 async def get_datasource(
     ds_id: str,
@@ -55,6 +70,19 @@ async def create_datasource(
     return Response(message="创建成功", data=data)
 
 
+@router.post("/remote-datasets")
+async def create_remote_dataset(
+    request: CreateRemoteDatasetRequest,
+    service: DataSourceService = Depends(get_service),
+):
+    """创建远程目录数据集并执行首次导入"""
+    try:
+        data = service.create_remote_dataset(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return Response(message="创建成功", data=data)
+
+
 @router.put("/{ds_id}")
 async def update_datasource(
     ds_id: str,
@@ -62,7 +90,10 @@ async def update_datasource(
     service: DataSourceService = Depends(get_service)
 ):
     """更新数据源"""
-    data = service.update(ds_id, request)
+    try:
+        data = service.update(ds_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if not data:
         raise HTTPException(status_code=404, detail="数据源不存在")
     return Response(message="更新成功", data=data)
@@ -87,6 +118,19 @@ async def test_datasource_connection(
     """测试已保存数据源的连接"""
     data = service.test_connection_by_id(ds_id)
     return Response(data=data)
+
+
+@router.post("/{ds_id}/refresh")
+async def refresh_remote_dataset(
+    ds_id: str,
+    service: DataSourceService = Depends(get_service),
+):
+    """手动刷新远程目录数据集快照"""
+    try:
+        data = service.refresh_remote_dataset(ds_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return Response(message="刷新成功", data=data)
 
 
 @router.post("/test-connection")

@@ -31,9 +31,31 @@ from app.utils.crypto import decrypt
 class CompareService:
     """比对服务"""
 
+    FILE_DB_TYPES = {"excel", "dbf"}
+
     def __init__(self, db: Session):
         self.db = db
         self.task_manager = TaskManager()
+
+    def _connector_kwargs_from_ds(self, ds: DataSource, timeout: Optional[int] = None) -> Dict[str, Any]:
+        password = ""
+        if ds.password_encrypted:
+            try:
+                password = decrypt(ds.password_encrypted)
+            except Exception:
+                password = ""
+        return {
+            "db_type": ds.db_type,
+            "host": ds.host,
+            "port": ds.port,
+            "database": ds.database,
+            "username": ds.username,
+            "password": password,
+            "schema": ds.schema,
+            "charset": ds.charset,
+            "timeout": timeout if timeout is not None else ds.timeout,
+            "extra_config": ds.extra_config or {},
+        }
 
     def create_task(self, request: CreateTaskRequest) -> Dict[str, Any]:
         """创建比对任务"""
@@ -46,6 +68,7 @@ class CompareService:
             raise ValueError(f"目标数据源不存在: {request.target_id}")
 
         config_data = request.model_dump()
+        self._validate_file_source_config(source_ds, target_ds, config_data)
         self._validate_incremental_config(config_data)
         if config_data.get("table_selection", {}).get("mode") == "mapping":
             self._validate_mapping_task_config(source_ds, target_ds, config_data)
@@ -108,6 +131,8 @@ class CompareService:
         """执行比对（异步）"""
         runtime_settings = self._get_runtime_settings()
         compare_timeout = int(runtime_settings.get("compare_timeout", 3600))
+        compare_thread_count = int(runtime_settings.get("compare_thread_count", 4) or 4)
+        slot_key = await self.task_manager.acquire_run_slot(compare_thread_count)
 
         try:
             if compare_timeout > 0:
@@ -123,6 +148,8 @@ class CompareService:
         except Exception as e:
             logger.error(f"任务 {task_id} 执行失败: {e}")
             self._mark_task_failed(task_id, str(e))
+        finally:
+            self.task_manager.release_run_slot(slot_key)
 
     async def _run_compare(self, task_id: str, runtime_settings: Dict[str, Any]) -> None:
         self.task_manager.ensure_task(task_id)
@@ -144,28 +171,8 @@ class CompareService:
         source_timeout = db_query_timeout or source_ds.timeout
         target_timeout = db_query_timeout or target_ds.timeout
 
-        source_conn = ConnectorFactory.create(
-            db_type=source_ds.db_type,
-            host=source_ds.host,
-            port=source_ds.port,
-            database=source_ds.database,
-            username=source_ds.username,
-            password=decrypt(source_ds.password_encrypted),
-            schema=source_ds.schema,
-            charset=source_ds.charset,
-            timeout=source_timeout,
-        )
-        target_conn = ConnectorFactory.create(
-            db_type=target_ds.db_type,
-            host=target_ds.host,
-            port=target_ds.port,
-            database=target_ds.database,
-            username=target_ds.username,
-            password=decrypt(target_ds.password_encrypted),
-            schema=target_ds.schema,
-            charset=target_ds.charset,
-            timeout=target_timeout,
-        )
+        source_conn = ConnectorFactory.create(**self._connector_kwargs_from_ds(source_ds, timeout=source_timeout))
+        target_conn = ConnectorFactory.create(**self._connector_kwargs_from_ds(target_ds, timeout=target_timeout))
 
         source_conn.connect()
         target_conn.connect()
@@ -185,7 +192,10 @@ class CompareService:
 
             options = config.get("options", {}) or {}
             structure_options = options.get("structure_options", {}) or {}
-            data_options = options.get("data_options", {}) or {}
+            data_options = self._apply_runtime_data_defaults(
+                options.get("data_options", {}) or {},
+                runtime_settings=runtime_settings,
+            )
             max_diffs = int(runtime_settings.get("max_diff_display", 1000))
             ignore_rules = self._load_effective_ignore_rules(options)
 
@@ -199,7 +209,11 @@ class CompareService:
             summary_tables: set[str] = {p["display_table"] for p in compare_plan}
             if mode != "mapping":
                 source_tables_in_plan = [p["source_table"] for p in compare_plan]
-                target_tables_all = [t.name for t in target_conn.get_tables()]
+                target_tables_all = self._get_existence_target_tables(
+                    mode=mode,
+                    compare_plan=compare_plan,
+                    target_conn=target_conn,
+                )
                 existence_diffs = structure_comparator.compare_tables(source_tables_in_plan, target_tables_all)
                 existence_diffs = self._apply_ignore_rules_to_structure_diffs(
                     diffs=existence_diffs,
@@ -510,6 +524,31 @@ class CompareService:
             return [t for t in all_source_tables if t not in tables_list]
         raise ValueError(f"不支持的表选择模式: {mode}")
 
+    def _get_existence_target_tables(
+        self,
+        mode: str,
+        compare_plan: List[Dict[str, Any]],
+        target_conn,
+    ) -> List[str]:
+        """获取表存在性校验的目标表范围。"""
+        if mode == "all":
+            return [t.name for t in target_conn.get_tables()]
+        # include/exclude 仅在已选择范围内做存在性对齐，避免把未选表统计为差异
+        return list({item["target_table"] for item in compare_plan})
+
+    def _apply_runtime_data_defaults(
+        self,
+        data_options: Dict[str, Any],
+        runtime_settings: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """应用运行期数据比对默认值。"""
+        merged_options = dict(data_options or {})
+        page_size = int(merged_options.get("page_size") or 0)
+        default_page_size = max(1, int(runtime_settings.get("default_page_size", 10000) or 10000))
+        if page_size <= 0:
+            merged_options["page_size"] = default_page_size
+        return merged_options
+
     def _build_column_mapping(self, column_mappings: List[Dict[str, Any]], source_table: str, target_table: str) -> Dict[str, str]:
         """构建字段映射字典"""
         mapping = {}
@@ -539,6 +578,21 @@ class CompareService:
 
         if not has_time_filter and not has_batch_filter:
             raise ValueError("增量比对至少需要配置时间字段或批次字段")
+
+    def _validate_file_source_config(
+        self,
+        source_ds: DataSource,
+        target_ds: DataSource,
+        config: Dict[str, Any],
+    ) -> None:
+        """文件源场景的任务约束"""
+        options = (config or {}).get("options", {}) or {}
+        mode = options.get("mode", "full")
+        if mode == "incremental" and (
+            (source_ds.db_type or "").lower() in self.FILE_DB_TYPES
+            or (target_ds.db_type or "").lower() in self.FILE_DB_TYPES
+        ):
+            raise ValueError("涉及文件数据源时仅支持全量比对，暂不支持增量模式")
 
     def _build_incremental_where_clauses(
         self,
@@ -652,28 +706,8 @@ class CompareService:
     def _validate_mapping_task_config(self, source_ds: DataSource, target_ds: DataSource, config: Dict[str, Any]) -> None:
         """验证映射模式配置（含源/目标表存在性）"""
         try:
-            source_conn = ConnectorFactory.create(
-                db_type=source_ds.db_type,
-                host=source_ds.host,
-                port=source_ds.port,
-                database=source_ds.database,
-                username=source_ds.username,
-                password=decrypt(source_ds.password_encrypted),
-                schema=source_ds.schema,
-                charset=source_ds.charset,
-                timeout=source_ds.timeout,
-            )
-            target_conn = ConnectorFactory.create(
-                db_type=target_ds.db_type,
-                host=target_ds.host,
-                port=target_ds.port,
-                database=target_ds.database,
-                username=target_ds.username,
-                password=decrypt(target_ds.password_encrypted),
-                schema=target_ds.schema,
-                charset=target_ds.charset,
-                timeout=target_ds.timeout,
-            )
+            source_conn = ConnectorFactory.create(**self._connector_kwargs_from_ds(source_ds))
+            target_conn = ConnectorFactory.create(**self._connector_kwargs_from_ds(target_ds))
 
             source_conn.connect()
             target_conn.connect()

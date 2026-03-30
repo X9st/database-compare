@@ -73,6 +73,7 @@ class TaskManager:
             cls._instance._progress_callbacks: Dict[str, Callable] = {}
             cls._instance._cancel_events: Dict[str, asyncio.Event] = {}
             cls._instance._pause_events: Dict[str, asyncio.Event] = {}
+            cls._instance._run_semaphores: Dict[int, asyncio.Semaphore] = {}
         return cls._instance
     
     def create_task(self, task_id: Optional[str] = None) -> CompareTask:
@@ -187,6 +188,23 @@ class TaskManager:
         event = self._pause_events.get(task_id)
         if event:
             await event.wait()
+
+    async def acquire_run_slot(self, max_concurrency: int) -> int:
+        """获取并发执行槽位（用于任务级调度）"""
+        limit = max(1, int(max_concurrency or 1))
+        semaphore = self._run_semaphores.get(limit)
+        if semaphore is None:
+            semaphore = asyncio.Semaphore(limit)
+            self._run_semaphores[limit] = semaphore
+        await semaphore.acquire()
+        return limit
+
+    def release_run_slot(self, slot_key: int) -> None:
+        """释放并发执行槽位"""
+        limit = max(1, int(slot_key or 1))
+        semaphore = self._run_semaphores.get(limit)
+        if semaphore:
+            semaphore.release()
     
     def _notify_progress(self, task_id: str) -> None:
         """通知进度更新"""

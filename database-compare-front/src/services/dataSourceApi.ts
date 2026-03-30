@@ -1,5 +1,14 @@
 import api from './api';
-import { DataSource, CreateDataSourceDto, TestConnectionResult, ApiResponse, TableInfo } from '@/types';
+import {
+  DataSource,
+  CreateDataSourceDto,
+  CreateRemoteDatasetDto,
+  TestConnectionResult,
+  ApiResponse,
+  TableInfo,
+  FileUploadResult,
+  RemoteDatasetRefreshResult,
+} from '@/types';
 
 // 数据源分组
 export interface DataSourceGroup {
@@ -23,6 +32,9 @@ export const dataSourceApi = {
   
   create: (data: CreateDataSourceDto) => 
     api.post<ApiResponse<DataSource>>('/datasources', data),
+
+  createRemoteDataset: (data: CreateRemoteDatasetDto) =>
+    api.post<ApiResponse<DataSource>>('/datasources/remote-datasets', data),
   
   update: (id: string, data: Partial<CreateDataSourceDto>) => 
     api.put<ApiResponse<DataSource>>(`/datasources/${id}`, data),
@@ -32,6 +44,9 @@ export const dataSourceApi = {
   
   testConnection: (id: string) => 
     api.post<ApiResponse<TestConnectionResult>>(`/datasources/${id}/test`),
+
+  refreshRemoteDataset: (id: string) =>
+    api.post<ApiResponse<RemoteDatasetRefreshResult>>(`/datasources/${id}/refresh`),
   
   testConnectionDirect: (data: CreateDataSourceDto) =>
     api.post<ApiResponse<TestConnectionResult>>(`/datasources/test`, data),
@@ -41,6 +56,14 @@ export const dataSourceApi = {
   
   getTableSchema: (id: string, tableName: string) =>
     api.get<ApiResponse<any>>(`/datasources/${id}/tables/${tableName}/schema`),
+
+  uploadFile: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post<ApiResponse<FileUploadResult>>('/datasources/files/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 
   // ============ 分组接口 ============
   getGroups: () =>

@@ -25,64 +25,6 @@ services:
       retries: 12
       start_period: 30s
 
-  postgres:
-    image: postgres:16
-    container_name: dbcmp-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Postgres_123456}
-      POSTGRES_DB: ${POSTGRES_DB:-qa_compare_pg}
-      TZ: ${TZ:-Asia/Shanghai}
-    ports:
-      - "${POSTGRES_PORT:-35432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: dbcmp-sqlserver
-    restart: unless-stopped
-    environment:
-      ACCEPT_EULA: Y
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-SqlServer_123456}
-      MSSQL_PID: Developer
-      TZ: ${TZ:-Asia/Shanghai}
-    ports:
-      - "${SQLSERVER_PORT:-31433}:1433"
-    volumes:
-      - sqlserver_data:/var/opt/mssql
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$${MSSQL_SA_PASSWORD}' -C -Q 'SELECT 1' >/dev/null; else /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P '$${MSSQL_SA_PASSWORD}' -Q 'SELECT 1' >/dev/null; fi",
-        ]
-      interval: 15s
-      timeout: 8s
-      retries: 20
-      start_period: 45s
-
-  sqlserver-init:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: dbcmp-sqlserver-init
-    depends_on:
-      sqlserver:
-        condition: service_healthy
-    environment:
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-SqlServer_123456}
-    volumes:
-      - ./sqlserver/init:/init:ro
-    entrypoint: ["/bin/bash", "/init/run-init.sh"]
-    restart: "no"
-
   oracle:
     image: gvenzl/oracle-free:23-slim
     container_name: dbcmp-oracle
@@ -120,6 +62,4 @@ services:
 
 volumes:
   mysql_data:
-  postgres_data:
-  sqlserver_data:
   oracle_data:

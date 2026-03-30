@@ -8,8 +8,19 @@ class DMConnector(BaseConnector):
     
     def __init__(self, host: str, port: int, database: str,
                  username: str, password: str, schema: str = None,
-                 charset: str = "UTF-8", timeout: int = 30):
-        super().__init__(host, port, database, username, password, schema, charset, timeout)
+                 charset: str = "UTF-8", timeout: int = 30,
+                 extra_config: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            host,
+            port,
+            database,
+            username,
+            password,
+            schema,
+            charset,
+            timeout,
+            extra_config=extra_config,
+        )
     
     def connect(self) -> bool:
         """建立连接"""
