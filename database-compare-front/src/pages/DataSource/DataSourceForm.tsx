@@ -14,6 +14,21 @@ const DB_TYPE_OPTIONS = [
   { label: 'DBF', value: 'dbf' },
 ] as const;
 
+const INCEPTOR_AUTH_OPTIONS = [
+  { label: '自动（默认）', value: '' },
+  { label: 'LDAP', value: 'LDAP' },
+  { label: 'NOSASL', value: 'NOSASL' },
+  { label: 'NONE', value: 'NONE' },
+  { label: 'CUSTOM', value: 'CUSTOM' },
+];
+
+const INCEPTOR_TRANSPORT_OPTIONS = [
+  { label: '自动（默认）', value: '' },
+  { label: 'BINARY', value: 'BINARY' },
+  { label: 'HTTP', value: 'HTTP' },
+  { label: 'HTTPS', value: 'HTTPS' },
+];
+
 interface Props {
   visible: boolean;
   editingId: string | null;
@@ -33,6 +48,8 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
 
   const isEdit = !!editingId;
   const dbType = Form.useWatch('db_type', form) as DatabaseType | undefined;
+  const isInceptor = dbType === 'inceptor';
+  const inceptorAuthMode = Form.useWatch('inceptor_auth_mode', form) as string | undefined;
   const isFileSource = !!dbType && FILE_DB_TYPES.includes(dbType);
   const fileMode = (Form.useWatch('file_mode', form) as FileSourceMode | undefined) || 'single_file';
   const isRemoteDataset = isFileSource && fileMode === 'remote_dataset';
@@ -54,6 +71,20 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
           form.setFieldsValue({
             ...(data || {}),
             file_mode: mode,
+            inceptor_auth_mode:
+              data?.extra_config?.inceptor_auth_mode || data?.extra_config?.auth_mode || undefined,
+            inceptor_auth_fallback_modes: Array.isArray(data?.extra_config?.inceptor_auth_fallback_modes)
+              ? data.extra_config.inceptor_auth_fallback_modes.join(',')
+              : Array.isArray(data?.extra_config?.auth_fallback_modes)
+                ? data.extra_config.auth_fallback_modes.join(',')
+                : undefined,
+            inceptor_transport_mode:
+              data?.extra_config?.inceptor_transport_mode || data?.extra_config?.transport_mode || undefined,
+            inceptor_transport_fallback_modes: Array.isArray(data?.extra_config?.inceptor_transport_fallback_modes)
+              ? data.extra_config.inceptor_transport_fallback_modes.join(',')
+              : Array.isArray(data?.extra_config?.transport_fallback_modes)
+                ? data.extra_config.transport_fallback_modes.join(',')
+                : undefined,
             remote_host: data?.extra_config?.sftp?.host,
             remote_port: data?.extra_config?.sftp?.port || 22,
             remote_username: data?.extra_config?.sftp?.username,
@@ -80,6 +111,20 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
             form.setFieldsValue({
               ...ds,
               file_mode: mode,
+              inceptor_auth_mode:
+                ds?.extra_config?.inceptor_auth_mode || ds?.extra_config?.auth_mode || undefined,
+              inceptor_auth_fallback_modes: Array.isArray(ds?.extra_config?.inceptor_auth_fallback_modes)
+                ? ds.extra_config.inceptor_auth_fallback_modes.join(',')
+                : Array.isArray(ds?.extra_config?.auth_fallback_modes)
+                  ? ds.extra_config.auth_fallback_modes.join(',')
+                  : undefined,
+              inceptor_transport_mode:
+                ds?.extra_config?.inceptor_transport_mode || ds?.extra_config?.transport_mode || undefined,
+              inceptor_transport_fallback_modes: Array.isArray(ds?.extra_config?.inceptor_transport_fallback_modes)
+                ? ds.extra_config.inceptor_transport_fallback_modes.join(',')
+                : Array.isArray(ds?.extra_config?.transport_fallback_modes)
+                  ? ds.extra_config.transport_fallback_modes.join(',')
+                  : undefined,
               remote_host: ds?.extra_config?.sftp?.host,
               remote_port: ds?.extra_config?.sftp?.port || 22,
               remote_username: ds?.extra_config?.sftp?.username,
@@ -102,7 +147,16 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
     } else if (visible) {
       setUploadedFile(null);
       form.resetFields();
-      form.setFieldsValue({ charset: 'UTF-8', timeout: 30, file_mode: 'single_file', remote_port: 22 });
+      form.setFieldsValue({
+        charset: 'UTF-8',
+        timeout: 30,
+        file_mode: 'single_file',
+        remote_port: 22,
+        inceptor_auth_mode: undefined,
+        inceptor_auth_fallback_modes: undefined,
+        inceptor_transport_mode: undefined,
+        inceptor_transport_fallback_modes: undefined,
+      });
     }
   }, [visible, editingId, form]);
 
@@ -121,6 +175,14 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
       });
     } else {
       setUploadedFile(null);
+      if (nextDbType !== 'inceptor') {
+        form.setFieldsValue({
+          inceptor_auth_mode: undefined,
+          inceptor_auth_fallback_modes: undefined,
+          inceptor_transport_mode: undefined,
+          inceptor_transport_fallback_modes: undefined,
+        });
+      }
     }
   };
 
@@ -204,6 +266,31 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
           };
         }
       }
+      if (values.db_type === 'inceptor') {
+        const fallbackModes = String(values.inceptor_auth_fallback_modes || '')
+          .split(',')
+          .map((item: string) => item.trim().toUpperCase())
+          .filter(Boolean);
+        const transportFallbackModes = String(values.inceptor_transport_fallback_modes || '')
+          .split(',')
+          .map((item: string) => item.trim().toUpperCase())
+          .filter(Boolean);
+        testPayload.extra_config = {
+          ...(testPayload.extra_config || {}),
+          ...(values.inceptor_auth_mode
+            ? { inceptor_auth_mode: String(values.inceptor_auth_mode).trim().toUpperCase() }
+            : {}),
+          ...(fallbackModes.length > 0
+            ? { inceptor_auth_fallback_modes: fallbackModes }
+            : {}),
+          ...(values.inceptor_transport_mode
+            ? { inceptor_transport_mode: String(values.inceptor_transport_mode).trim().toUpperCase() }
+            : {}),
+          ...(transportFallbackModes.length > 0
+            ? { inceptor_transport_fallback_modes: transportFallbackModes }
+            : {}),
+        };
+      }
       if (isFileSource && !isRemoteDataset && !testPayload.extra_config?.storage_key) {
         message.warning('请先上传文件');
         return;
@@ -239,6 +326,10 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
       delete payload.remote_username;
       delete payload.remote_password;
       delete payload.remote_base_dir;
+      delete payload.inceptor_auth_mode;
+      delete payload.inceptor_auth_fallback_modes;
+      delete payload.inceptor_transport_mode;
+      delete payload.inceptor_transport_fallback_modes;
 
       if (!payload.password) {
         delete payload.password;
@@ -307,6 +398,32 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
             payload.database = existingExtraConfig.original_name || 'file_source';
           }
         }
+      }
+      if (payload.db_type === 'inceptor') {
+        const fallbackModes = String(values.inceptor_auth_fallback_modes || '')
+          .split(',')
+          .map((item: string) => item.trim().toUpperCase())
+          .filter(Boolean);
+        const transportFallbackModes = String(values.inceptor_transport_fallback_modes || '')
+          .split(',')
+          .map((item: string) => item.trim().toUpperCase())
+          .filter(Boolean);
+        const inceptorExtra = {
+          ...(payload.extra_config || {}),
+          ...(values.inceptor_auth_mode
+            ? { inceptor_auth_mode: String(values.inceptor_auth_mode).trim().toUpperCase() }
+            : {}),
+          ...(fallbackModes.length > 0
+            ? { inceptor_auth_fallback_modes: fallbackModes }
+            : {}),
+          ...(values.inceptor_transport_mode
+            ? { inceptor_transport_mode: String(values.inceptor_transport_mode).trim().toUpperCase() }
+            : {}),
+          ...(transportFallbackModes.length > 0
+            ? { inceptor_transport_fallback_modes: transportFallbackModes }
+            : {}),
+        };
+        payload.extra_config = Object.keys(inceptorExtra).length > 0 ? inceptorExtra : undefined;
       }
 
       setLoading(true);
@@ -506,15 +623,62 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
               <Form.Item
                 name="password"
                 label="密码"
-                rules={[{ required: !isEdit, message: '请输入密码' }]}
+                rules={[
+                  {
+                    validator: async (_, value) => {
+                      const authMode = String(inceptorAuthMode || '').trim().toUpperCase();
+                      const passwordOptional = isInceptor && ['NONE', 'NOSASL'].includes(authMode);
+                      if (isEdit && !value) {
+                        return;
+                      }
+                      if (passwordOptional && !value) {
+                        return;
+                      }
+                      if (!value) {
+                        throw new Error('请输入密码');
+                      }
+                    },
+                  },
+                ]}
                 style={{ flex: 1 }}
               >
                 <Input.Password
-                  placeholder={isEdit ? '留空表示不修改' : '请输入密码'}
+                  placeholder={
+                    isEdit
+                      ? '留空表示不修改'
+                      : (isInceptor && ['NONE', 'NOSASL'].includes(String(inceptorAuthMode || '').trim().toUpperCase())
+                          ? 'NONE/NOSASL 可留空'
+                          : '请输入密码')
+                  }
                   iconRender={(visible) => (visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />)}
                 />
               </Form.Item>
             </Space>
+
+            {isInceptor ? (
+              <>
+                <Space style={{ display: 'flex' }} align="start">
+                  <Form.Item name="inceptor_auth_mode" label="Inceptor 认证模式" style={{ width: 220 }}>
+                    <Select options={INCEPTOR_AUTH_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item name="inceptor_auth_fallback_modes" label="认证回退模式（可选）" style={{ flex: 1 }}>
+                    <Input placeholder="例如：NOSASL,NONE" />
+                  </Form.Item>
+                </Space>
+                <Space style={{ display: 'flex' }} align="start">
+                  <Form.Item name="inceptor_transport_mode" label="Inceptor 传输模式" style={{ width: 220 }}>
+                    <Select options={INCEPTOR_TRANSPORT_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item
+                    name="inceptor_transport_fallback_modes"
+                    label="传输回退模式（可选）"
+                    style={{ flex: 1 }}
+                  >
+                    <Input placeholder="例如：HTTP,HTTPS" />
+                  </Form.Item>
+                </Space>
+              </>
+            ) : null}
 
             <Space style={{ display: 'flex' }} align="start">
               <Form.Item name="charset" label="字符集" style={{ width: 150 }}>

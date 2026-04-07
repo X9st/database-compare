@@ -22,8 +22,29 @@ class DataSourceBase(BaseModel):
     timeout: int = Field(30, description="连接超时秒数")
     extra_config: Optional[Dict[str, Any]] = Field(
         None,
-        description="扩展配置（文件源: single_file 或 remote_dataset）",
+        description=(
+            "扩展配置（文件源: single_file/remote_dataset；"
+            "Inceptor 可选: inceptor_auth_mode/auth_mode, "
+            "inceptor_auth_fallback_modes/auth_fallback_modes, "
+            "inceptor_transport_mode/transport_mode, "
+            "inceptor_transport_fallback_modes/transport_fallback_modes）"
+        ),
     )
+
+    @staticmethod
+    def _inceptor_auth_mode(extra_config: Optional[Dict[str, Any]]) -> str:
+        cfg = extra_config or {}
+        mode = str(cfg.get("inceptor_auth_mode") or cfg.get("auth_mode") or "").strip().upper()
+        return mode
+
+    @classmethod
+    def _password_required_for_db(cls, db_type: str, extra_config: Optional[Dict[str, Any]]) -> bool:
+        db_type = (db_type or "").strip().lower()
+        if db_type != "inceptor":
+            return True
+        auth_mode = cls._inceptor_auth_mode(extra_config)
+        # Inceptor 在 NONE/NOSASL 模式下可不提供密码。
+        return auth_mode not in {"NONE", "NOSASL"}
 
     @classmethod
     def _validate_single_file_config(cls, db_type: str, extra_config: Dict[str, Any]) -> None:
@@ -120,7 +141,11 @@ class CreateDataSourceRequest(DataSourceBase):
 
     @model_validator(mode="after")
     def validate_password(self) -> "CreateDataSourceRequest":
-        if self.db_type not in self.FILE_DB_TYPES and not self.password:
+        if (
+            self.db_type not in self.FILE_DB_TYPES
+            and self._password_required_for_db(self.db_type, self.extra_config)
+            and not self.password
+        ):
             raise ValueError("数据库数据源必须提供密码")
         return self
 
@@ -195,8 +220,9 @@ class TestConnectionRequest(BaseModel):
             "port": self.port,
             "database": self.database,
             "username": self.username,
-            "password": self.password,
         }
+        if DataSourceBase._password_required_for_db(db_type, self.extra_config):
+            required["password"] = self.password
         missing = [k for k, v in required.items() if v in (None, "")]
         if missing:
             raise ValueError(f"数据库测试连接缺少必填字段: {', '.join(missing)}")

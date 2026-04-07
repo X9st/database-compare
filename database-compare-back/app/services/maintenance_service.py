@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Dict, List
+from datetime import datetime
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -92,3 +93,23 @@ class MaintenanceService:
             "data_diffs_deleted": int(data_diffs_deleted or 0),
             "templates_deleted": int(templates_deleted or 0),
         }
+
+    def recover_stale_running_tasks(self) -> int:
+        """启动时将遗留运行中任务标记为失败，避免界面卡在运行态。"""
+        running_tasks = (
+            self.db.query(CompareTask)
+            .filter(CompareTask.status.in_(["running", "pending", "paused"]))
+            .all()
+        )
+        if not running_tasks:
+            return 0
+
+        now = datetime.utcnow()
+        for task in running_tasks:
+            task.status = "failed"
+            if not task.error_message:
+                task.error_message = "任务在服务重启或异常中断后被恢复为失败，请重新发起比对。"
+            task.completed_at = now
+
+        self.db.commit()
+        return len(running_tasks)

@@ -9,6 +9,7 @@ import styles from './index.module.less';
 
 const Compare: React.FC = () => {
   const [current, setCurrent] = useState(0);
+  const [starting, setStarting] = useState(false);
   const { current_task, startCompare } = useCompareStore();
 
   const next = () => {
@@ -42,6 +43,9 @@ const Compare: React.FC = () => {
   const prev = () => setCurrent(current - 1);
 
   const handleStart = async () => {
+    if (starting) {
+      return;
+    }
     const options = current_task?.options;
     if (!options) {
       message.error('比对参数缺失');
@@ -78,15 +82,27 @@ const Compare: React.FC = () => {
     }
 
     try {
+      setStarting(true);
+      message.open({ key: 'compare-start', type: 'loading', content: '正在创建并启动比对任务...' });
       const started = await startCompare();
-      setCurrent(current + 1);
+      setCurrent((prev) => prev + 1);
       if (started.resume_from_task_id) {
-        message.success(`已从失败任务 ${started.resume_from_task_id} 断点续跑`);
+        message.success({
+          key: 'compare-start',
+          content: `已从失败任务 ${started.resume_from_task_id} 断点续跑`,
+        });
       } else {
-        message.success('比对任务已启动');
+        message.success({ key: 'compare-start', content: '比对任务已启动' });
       }
-    } catch (e) {
-      message.error('启动失败');
+    } catch (e: any) {
+      const errorMsg =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        e?.message ||
+        '未知错误';
+      message.error({ key: 'compare-start', content: `启动失败: ${errorMsg}` });
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -107,7 +123,9 @@ const Compare: React.FC = () => {
             <Button type="primary" onClick={() => next()}>下一步</Button>
           )}
           {current === steps.length - 2 && (
-            <Button type="primary" onClick={handleStart}>开始比对</Button>
+            <Button type="primary" loading={starting} onClick={handleStart}>
+              开始比对
+            </Button>
           )}
           {current > 0 && current < steps.length - 1 && (
             <Button style={{ margin: '0 8px' }} onClick={() => prev()}>上一步</Button>

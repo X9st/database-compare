@@ -106,3 +106,82 @@ def test_cleanup_legacy_datasources_cascades_related_data():
         db.query(DataSource).delete()
         db.commit()
         db.close()
+
+
+def test_recover_stale_running_tasks_marks_unfinished_as_failed():
+    init_database()
+    db = SessionLocal()
+    try:
+        source_ds = DataSource(
+            id=str(uuid.uuid4()),
+            name="src-mysql",
+            db_type="mysql",
+            host="127.0.0.1",
+            port=3306,
+            database="qa",
+            username="qa",
+            password_encrypted=encrypt("pwd"),
+            charset="UTF-8",
+            timeout=30,
+        )
+        target_ds = DataSource(
+            id=str(uuid.uuid4()),
+            name="tgt-inceptor",
+            db_type="inceptor",
+            host="127.0.0.1",
+            port=10000,
+            database="default",
+            username="admin",
+            password_encrypted=encrypt("pwd"),
+            charset="UTF-8",
+            timeout=30,
+        )
+        db.add_all([source_ds, target_ds])
+        db.commit()
+
+        statuses = ["pending", "running", "paused", "completed", "failed", "cancelled"]
+        task_ids = {}
+        for status in statuses:
+            task_id = str(uuid.uuid4())
+            task_ids[status] = task_id
+            db.add(
+                CompareTask(
+                    id=task_id,
+                    source_id=source_ds.id,
+                    target_id=target_ds.id,
+                    status=status,
+                    config={
+                        "source_id": source_ds.id,
+                        "target_id": target_ds.id,
+                        "table_selection": {"mode": "all", "tables": []},
+                        "options": {"mode": "full"},
+                    },
+                    progress={},
+                    started_at=datetime.utcnow(),
+                )
+            )
+        db.commit()
+
+        recovered = MaintenanceService(db).recover_stale_running_tasks()
+        assert recovered == 3
+
+        for status in ["pending", "running", "paused"]:
+            task = db.query(CompareTask).filter(CompareTask.id == task_ids[status]).first()
+            assert task is not None
+            assert task.status == "failed"
+            assert task.completed_at is not None
+            assert task.error_message
+
+        for status in ["completed", "failed", "cancelled"]:
+            task = db.query(CompareTask).filter(CompareTask.id == task_ids[status]).first()
+            assert task is not None
+            assert task.status == status
+    finally:
+        db.query(CompareTask).delete()
+        db.query(CompareResult).delete()
+        db.query(StructureDiff).delete()
+        db.query(DataDiff).delete()
+        db.query(CompareTemplate).delete()
+        db.query(DataSource).delete()
+        db.commit()
+        db.close()

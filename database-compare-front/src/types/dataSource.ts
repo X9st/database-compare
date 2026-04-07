@@ -28,6 +28,18 @@ export interface DatasetSnapshot {
 }
 
 export interface DataSourceExtraConfig {
+  auth_mode?: 'LDAP' | 'NONE' | 'NOSASL' | 'CUSTOM';
+  inceptor_auth_mode?: 'LDAP' | 'NONE' | 'NOSASL' | 'CUSTOM';
+  auth_fallback_modes?: string[];
+  inceptor_auth_fallback_modes?: string[];
+  transport_mode?: 'BINARY' | 'HTTP' | 'HTTPS';
+  inceptor_transport_mode?: 'BINARY' | 'HTTP' | 'HTTPS';
+  transport_fallback_modes?: string[];
+  inceptor_transport_fallback_modes?: string[];
+  ssl_check_hostname?: boolean;
+  inceptor_ssl_check_hostname?: boolean;
+  ssl_cert?: 'none' | 'optional' | 'required';
+  inceptor_ssl_cert?: 'none' | 'optional' | 'required';
   mode?: FileSourceMode;
   storage_key?: string;
   original_name?: string;

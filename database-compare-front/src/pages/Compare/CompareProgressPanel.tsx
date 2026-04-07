@@ -60,11 +60,13 @@ const CompareProgressPanel: React.FC = () => {
     }
   }, [applyTaskStatus]);
 
+  const handleWsError = useCallback(() => {
+    // WebSocket异常时由轮询兜底
+  }, []);
+
   const { isConnected } = useWebSocket(websocketUrl, {
     onMessage: handleWsMessage,
-    onError: () => {
-      // WebSocket异常时由轮询兜底
-    },
+    onError: handleWsError,
   });
 
   useEffect(() => {

@@ -18,7 +18,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"启动 {settings.APP_NAME} v{settings.APP_VERSION}")
     db = SessionLocal()
     try:
-        cleanup_stats = MaintenanceService(db).cleanup_legacy_datasources()
+        maintenance_service = MaintenanceService(db)
+        stale_tasks = maintenance_service.recover_stale_running_tasks()
+        if stale_tasks > 0:
+            logger.info(f"启动恢复遗留任务完成: {stale_tasks} 条运行中任务已标记失败")
+
+        cleanup_stats = maintenance_service.cleanup_legacy_datasources()
         if cleanup_stats.get("datasources_deleted", 0) > 0:
             logger.info(f"启动清理下线数据源完成: {cleanup_stats}")
 

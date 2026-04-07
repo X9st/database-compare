@@ -15,8 +15,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--database", default="default", help="Inceptor database")
     parser.add_argument("--username", required=True, help="Username")
     parser.add_argument("--password", default="", help="Password")
+    parser.add_argument(
+        "--auth-mode",
+        default="",
+        help="Optional auth mode: LDAP/NOSASL/NONE/CUSTOM",
+    )
+    parser.add_argument(
+        "--auth-fallback-modes",
+        default="",
+        help="Optional fallback auth modes, comma separated, e.g. NOSASL,NONE",
+    )
+    parser.add_argument(
+        "--transport-mode",
+        default="",
+        help="Optional transport mode: BINARY/HTTP/HTTPS",
+    )
+    parser.add_argument(
+        "--transport-fallback-modes",
+        default="",
+        help="Optional fallback transport modes, comma separated, e.g. HTTP,HTTPS",
+    )
     parser.add_argument("--table", default="cmp_user", help="Table for schema/data checks")
     return parser.parse_args()
+
+
+def _split_modes(raw_value: str) -> list[str]:
+    return [item.strip().upper() for item in str(raw_value or "").split(",") if item.strip()]
 
 
 def main() -> int:
@@ -32,6 +56,18 @@ def main() -> int:
         print(f"[FAIL] import backend modules failed: {exc}")
         return 2
 
+    extra_config = {}
+    if args.auth_mode:
+        extra_config["inceptor_auth_mode"] = str(args.auth_mode).strip().upper()
+    auth_fallback_modes = _split_modes(args.auth_fallback_modes)
+    if auth_fallback_modes:
+        extra_config["inceptor_auth_fallback_modes"] = auth_fallback_modes
+    if args.transport_mode:
+        extra_config["inceptor_transport_mode"] = str(args.transport_mode).strip().upper()
+    transport_fallback_modes = _split_modes(args.transport_fallback_modes)
+    if transport_fallback_modes:
+        extra_config["inceptor_transport_fallback_modes"] = transport_fallback_modes
+
     connector = ConnectorFactory.create(
         db_type="inceptor",
         host=args.host,
@@ -41,6 +77,7 @@ def main() -> int:
         password=args.password,
         charset="UTF-8",
         timeout=30,
+        extra_config=extra_config or None,
     )
 
     print("[INFO] testing Inceptor connection...")

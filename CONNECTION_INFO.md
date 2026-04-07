@@ -64,9 +64,10 @@ ssh root@39.105.124.246 -p 22
 
 - 连接器实现：`database-compare-back/app/core/connector/inceptor.py`
 - 依赖：`pyhive==0.7.0`、`thrift==0.16.0`、`thrift_sasl==0.4.3`
-- 认证策略（代码中）：
-  - 有密码时：`auth='LDAP'`
-  - 无密码时：`auth='NONE'`
+- 认证与传输策略（代码中）：
+  - 认证默认回退：有密码时 `LDAP -> NOSASL -> NONE`，无密码时 `NONE -> NOSASL -> LDAP`
+  - 传输默认回退：`BINARY -> HTTP`
+  - 可通过 `extra_config` 显式指定认证/传输模式与回退序列
 
 ### 3.3 项目内数据源配置（前后端一致）
 
@@ -89,6 +90,27 @@ ssh root@39.105.124.246 -p 22
 - Password：`AAAaaa11`
 - Charset：`UTF-8`
 - Timeout：`30`
+
+如果直连公网 `39.105.124.246:10000` 出现 `TSocket read 0 bytes`，可在 Inceptor 数据源 `extra_config` 使用：
+
+- `inceptor_auth_mode`: `LDAP` / `NOSASL` / `NONE` / `CUSTOM`
+- `inceptor_auth_fallback_modes`: 例如 `["NOSASL", "NONE"]`
+- `inceptor_transport_mode`: `BINARY` / `HTTP` / `HTTPS`
+- `inceptor_transport_fallback_modes`: 例如 `["HTTP", "HTTPS"]`
+
+推荐优先做 SSH 隧道（最稳）：
+
+```bash
+ssh -N -L 11000:127.0.0.1:10000 root@39.105.124.246 -p 22
+```
+
+然后项目里配置 Inceptor 为：
+
+- Host：`127.0.0.1`
+- Port：`11000`
+- Database：`default`
+- Username：`admin`
+- Password：`AAAaaa11`
 
 ### 3.4 Python 直连示例（项目外独立测试）
 
@@ -198,3 +220,76 @@ docker exec tdh-dev bash -lc "sudo -u hive /usr/lib/transwarp/scripts/beeline -u
 
 - 如果后端服务与 Inceptor 在同一台服务器，优先使用 `127.0.0.1:10000`
 - 仅在本地开发机直连时使用 `39.105.124.246:10000`
+
+---
+
+## 4) 本地 MySQL（作为源库，联调 Inceptor）
+
+更新时间：2026-04-01
+
+### 4.1 连接参数（本机）
+
+- 数据库类型：`MySQL 8.0`
+- Host：`127.0.0.1`（或 `localhost`）
+- Port：`3306`
+- Username：`root`
+- Password：`asasas11`
+- Database：`source_db`
+
+用于本项目 UI 新增数据源时填写：
+
+- `db_type`: `mysql`
+- `host`: `127.0.0.1`
+- `port`: `3306`
+- `database`: `source_db`
+- `username`: `root`
+- `password`: `asasas11`
+- `schema`: 留空
+
+### 4.2 已执行的建库与造数动作
+
+本地已执行以下命令（可重复执行）：
+
+```bash
+mysql -uroot -pasasas11 -e "CREATE DATABASE IF NOT EXISTS source_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -uroot -pasasas11 source_db < /Users/asialee/database-compare/database-compare-back/dev/multidb/mysql/init/01-schema-data.sql
+```
+
+### 4.3 当前 source_db 表与数据（已校验）
+
+表清单：
+
+- `cmp_user`
+- `cmp_order`
+- `cmp_order_item`
+- `cmp_data_case`
+- `cmp_struct_case`
+- `cmp_no_pk_log`
+- `cmp_mysql_only`
+
+行数校验结果：
+
+- `cmp_user` = `4`
+- `cmp_order` = `3`
+- `cmp_order_item` = `4`
+- `cmp_data_case` = `5`
+- `cmp_struct_case` = `2`
+- `cmp_no_pk_log` = `2`
+- `cmp_mysql_only` = `1`
+
+`cmp_data_case` 源库关键数据（用于与 Inceptor 目标库对比）：
+
+- `id=1`: `nullable_flag=NULL`（目标库为 `N`）
+- `id=2`: `whitespace_value='abc   '`（目标库为 `abc`）
+- `id=3`: `case_value='MiXeD'`（目标库为 `mixed`）
+- `id=4`: 源库有该行（目标库无该行）
+- `id=5`: `num_value=0.333333`（目标库为 `0.333334`）
+- `id=6`: 源库无该行（目标库有该行）
+
+### 4.4 快速校验命令（本机）
+
+```bash
+mysql -uroot -pasasas11 -D source_db -e "SHOW TABLES LIKE 'cmp_%';"
+mysql -uroot -pasasas11 -D source_db -e "SELECT COUNT(*) AS c_user FROM cmp_user; SELECT COUNT(*) AS c_order FROM cmp_order; SELECT COUNT(*) AS c_item FROM cmp_order_item; SELECT COUNT(*) AS c_data_case FROM cmp_data_case;"
+mysql -uroot -pasasas11 -D source_db -e "SELECT id, nullable_flag, whitespace_value, case_value, num_value FROM cmp_data_case ORDER BY id;"
+```

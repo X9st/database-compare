@@ -123,9 +123,24 @@ class CompareService:
         db_task.started_at = datetime.utcnow()
         self.db.commit()
 
-        asyncio.create_task(self._execute_compare(task_id))
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, self._execute_compare_in_worker, task_id)
 
         return {"task_id": task_id, "status": "running"}
+
+    @staticmethod
+    def _execute_compare_in_worker(task_id: str) -> None:
+        """在线程池中执行比对，避免阻塞主事件循环。"""
+        from app.db.session import SessionLocal
+
+        db = SessionLocal()
+        try:
+            service = CompareService(db)
+            asyncio.run(service._execute_compare(task_id))
+        except Exception as exc:
+            logger.error(f"任务 {task_id} 工作线程异常: {exc}")
+        finally:
+            db.close()
 
     async def _execute_compare(self, task_id: str) -> None:
         """执行比对（异步）"""
