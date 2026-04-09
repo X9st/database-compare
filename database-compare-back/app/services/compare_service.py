@@ -20,6 +20,7 @@ from app.core.connector import ConnectorFactory
 from app.core.comparator.structure import StructureComparator, StructureDiff as ComparatorStructureDiff
 from app.core.comparator.data import (
     DataComparator,
+    ComparisonCancelled,
     DataDiff as ComparatorDataDiff,
     DataDiffType,
 )
@@ -267,14 +268,7 @@ class CompareService:
                     logger.debug(f"获取源表 {source_table} 行数失败: {exc}")
 
                 if self.task_manager.is_cancelled(task_id):
-                    db_task = self.db.query(CompareTask).filter(CompareTask.id == task_id).first()
-                    if db_task:
-                        db_task.status = "cancelled"
-                        db_task.completed_at = datetime.utcnow()
-                        self._persist_progress_snapshot(task_id, completed_source_tables)
-                        self.db.commit()
-                    self.task_manager.update_status(task_id, TaskStatus.CANCELLED)
-                    self._run_auto_cleanup_if_enabled()
+                    self._mark_task_cancelled(task_id, completed_source_tables)
                     return
 
                 await self.task_manager.wait_if_paused(task_id)
@@ -374,7 +368,12 @@ class CompareService:
                         effective_mapping = dict(column_mapping)
                         effective_mapping.update(pk_mapping)
 
-                        data_comparator = DataComparator(source_conn, target_conn, data_options)
+                        data_comparator = DataComparator(
+                            source_conn,
+                            target_conn,
+                            data_options,
+                            cancel_check=lambda: self.task_manager.is_cancelled(task_id),
+                        )
                         data_diffs = data_comparator.compare_data(
                             source_table,
                             primary_keys,
@@ -395,6 +394,10 @@ class CompareService:
                         table_data_diffs_count += len(data_diffs)
                         if data_diffs:
                             data_diff_tables.add(display_table)
+                except ComparisonCancelled:
+                    logger.info(f"任务 {task_id} 在表 {display_table} 数据比对阶段收到取消请求")
+                    self._mark_task_cancelled(task_id, completed_source_tables)
+                    return
                 except Exception as e:
                     logger.warning(f"表 {display_table} 数据比对失败: {e}")
                     data_diff = ComparatorDataDiff(
@@ -1092,6 +1095,19 @@ class CompareService:
         if not raw:
             return []
         return [str(item) for item in raw if str(item).strip()]
+
+    def _mark_task_cancelled(self, task_id: str, completed_source_tables: Optional[List[str]] = None) -> None:
+        db_task = self.db.query(CompareTask).filter(CompareTask.id == task_id).first()
+        if db_task:
+            db_task.status = "cancelled"
+            db_task.completed_at = datetime.utcnow()
+            self._persist_progress_snapshot(
+                task_id,
+                completed_source_tables or self._extract_completed_source_tables(db_task.progress),
+            )
+            self.db.commit()
+        self.task_manager.update_status(task_id, TaskStatus.CANCELLED)
+        self._run_auto_cleanup_if_enabled()
 
     def _mark_task_failed(self, task_id: str, error_message: str) -> None:
         db_task = self.db.query(CompareTask).filter(CompareTask.id == task_id).first()

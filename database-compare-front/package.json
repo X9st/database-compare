@@ -9,7 +9,7 @@
     "dev": "vite",
     "dev:electron": "npm run build:electron && concurrently \"npm run dev\" \"wait-on http://localhost:3000 && node scripts/dev-electron.mjs\"",
     "build": "tsc && vite build",
-    "build:electron": "tsc -p tsconfig.electron.json && echo '{\"type\":\"commonjs\"}' > electron-dist/package.json",
+    "build:electron": "tsc -p tsconfig.electron.json && node -e \"const fs=require('fs'); fs.writeFileSync('electron-dist/package.json', JSON.stringify({ type: 'commonjs' }, null, 2));\"",
     "build:win": "npm run build && npm run build:electron && electron-builder --win",
     "build:mac": "npm run build && npm run build:electron && electron-builder --mac",
     "preview": "vite preview",

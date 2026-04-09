@@ -38,6 +38,32 @@ interface Props {
 
 const FILE_DB_TYPES: DatabaseType[] = ['excel', 'dbf'];
 
+const extractErrorMessage = (error: any): string => {
+  const raw = error?.response?.data?.detail || error?.response?.data?.message || error?.message;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item?.msg) return String(item.msg);
+        try {
+          return JSON.stringify(item);
+        } catch {
+          return String(item);
+        }
+      })
+      .join('; ');
+  }
+  if (raw && typeof raw === 'object') {
+    if (raw.msg) return String(raw.msg);
+    try {
+      return JSON.stringify(raw);
+    } catch {
+      return String(raw);
+    }
+  }
+  return String(raw || '');
+};
+
 const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSuccess }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -229,9 +255,29 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
   };
 
   const handleTestConnection = async () => {
+    setTesting(true);
     try {
       const values = await form.validateFields();
       const testPayload: any = { ...values };
+      const hasEditedConnectionFields = form.isFieldsTouched(
+        ['host', 'port', 'database', 'schema', 'username', 'charset', 'timeout'],
+        false
+      );
+
+      if (isEdit && editingId && !isFileSource && !values.password) {
+        if (hasEditedConnectionFields) {
+          message.warning('已修改连接参数但未输入密码，无法测试当前修改；请输入密码后重试。');
+          return;
+        }
+        const savedResult = await dataSourceApi.testConnection(editingId);
+        if (savedResult.data?.data?.success) {
+          message.success(`连接成功！数据库版本: ${savedResult.data.data.version}`);
+        } else {
+          message.error(`连接失败: ${savedResult.data?.data?.message || '未知错误'}`);
+        }
+        return;
+      }
+
       if (isRemoteDataset) {
         if (!values.remote_password) {
           message.warning('远程目录测试连接需要输入 SFTP 密码');
@@ -295,20 +341,19 @@ const DataSourceForm: React.FC<Props> = ({ visible, editingId, onClose, onSucces
         message.warning('请先上传文件');
         return;
       }
-      setTesting(true);
-      try {
-        const result = await dataSourceApi.testConnectionDirect(testPayload);
-        if (result.data?.data?.success) {
-          message.success(`连接成功！数据库版本: ${result.data.data.version}`);
-        } else {
-          message.error(`连接失败: ${result.data?.data?.message || '未知错误'}`);
-        }
-      } catch (e: any) {
-        const backendMessage = e?.response?.data?.detail || e?.response?.data?.message || e?.message;
+      const result = await dataSourceApi.testConnectionDirect(testPayload);
+      if (result.data?.data?.success) {
+        message.success(`连接成功！数据库版本: ${result.data.data.version}`);
+      } else {
+        message.error(`连接失败: ${result.data?.data?.message || '未知错误'}`);
+      }
+    } catch (error: any) {
+      if (Array.isArray(error?.errorFields)) {
+        message.warning('请先补全必填项后再测试连接');
+      } else {
+        const backendMessage = extractErrorMessage(error);
         message.error(`连接测试失败: ${backendMessage || '请检查网络或后端服务'}`);
       }
-    } catch (error) {
-      // 表单校验失败
     } finally {
       setTesting(false);
     }

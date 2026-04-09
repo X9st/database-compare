@@ -1,5 +1,5 @@
 """数据比对器"""
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 from enum import Enum
 from decimal import Decimal
@@ -17,6 +17,10 @@ class DataDiffType(str, Enum):
     TABLE_COMPARE_ERROR = "table_compare_error"
 
 
+class ComparisonCancelled(Exception):
+    """Raised when compare task gets cancelled during row paging."""
+
+
 @dataclass
 class DataDiff:
     """数据差异"""
@@ -32,10 +36,12 @@ class DataComparator:
     """数据比对器"""
     
     def __init__(self, source_conn: BaseConnector, target_conn: BaseConnector,
-                 options: Dict[str, Any] = None):
+                 options: Dict[str, Any] = None,
+                 cancel_check: Optional[Callable[[], bool]] = None):
         self.source_conn = source_conn
         self.target_conn = target_conn
         self.options = options or {}
+        self.cancel_check = cancel_check
         
         # 比对选项
         self.float_precision = self.options.get('float_precision', 6)
@@ -45,6 +51,10 @@ class DataComparator:
         self.page_size = self.options.get('page_size', 10000)
         self.skip_large_fields = self.options.get('skip_large_fields', False)
         self.large_field_types = {'text', 'longtext', 'clob', 'blob', 'longblob', 'bytea'}
+
+    def _ensure_not_cancelled(self) -> None:
+        if self.cancel_check and self.cancel_check():
+            raise ComparisonCancelled("compare task cancelled")
     
     def compare_row_count(self, table_name: str, 
                           target_table: str = None,
@@ -77,6 +87,7 @@ class DataComparator:
         target_table = target_table or table_name
         column_mapping = column_mapping or {}
         diffs = []
+        self._ensure_not_cancelled()
 
         # 仅比较双方都存在的字段，避免因结构差异导致目标库查询失败
         source_columns = self.source_conn.get_columns(table_name)
@@ -134,6 +145,7 @@ class DataComparator:
         source_pk_set = set()
         offset = 0
         while len(diffs) < max_diffs:
+            self._ensure_not_cancelled()
             # 分页获取源数据
             source_data = self.source_conn.fetch_data(
                 table_name, source_fetch_columns, where_clause, order_by, offset, self.page_size
@@ -159,6 +171,7 @@ class DataComparator:
             
             # 比对每一行
             for source_row in source_data:
+                self._ensure_not_cancelled()
                 if len(diffs) >= max_diffs:
                     break
                     
@@ -231,6 +244,7 @@ class DataComparator:
     ) -> List[DataDiff]:
         """文件数据源回退比对：不依赖 SQL where 下推。"""
         diffs: List[DataDiff] = []
+        self._ensure_not_cancelled()
         row_count_diff = self.compare_row_count(table_name=table_name, target_table=target_table)
         if row_count_diff:
             diffs.append(row_count_diff)
@@ -241,6 +255,7 @@ class DataComparator:
         target_map: Dict[str, Dict[str, Any]] = {}
         target_offset = 0
         while True:
+            self._ensure_not_cancelled()
             target_rows = self.target_conn.fetch_data(
                 target_table,
                 columns=target_fetch_columns,
@@ -259,6 +274,7 @@ class DataComparator:
         source_pk_set = set()
         source_offset = 0
         while len(diffs) < max_diffs:
+            self._ensure_not_cancelled()
             source_rows = self.source_conn.fetch_data(
                 table_name,
                 columns=source_fetch_columns,
@@ -271,6 +287,7 @@ class DataComparator:
                 break
 
             for source_row in source_rows:
+                self._ensure_not_cancelled()
                 if len(diffs) >= max_diffs:
                     break
                 pk = self._extract_pk(source_row, primary_keys)
@@ -316,6 +333,7 @@ class DataComparator:
 
         if len(diffs) < max_diffs:
             for key, target_row in target_map.items():
+                self._ensure_not_cancelled()
                 if len(diffs) >= max_diffs:
                     break
                 if key in source_pk_set:
@@ -500,6 +518,7 @@ class DataComparator:
 
         offset = 0
         while len(diffs) < max_diffs:
+            self._ensure_not_cancelled()
             target_data = self.target_conn.fetch_data(
                 target_table,
                 target_fetch_columns,
@@ -512,6 +531,7 @@ class DataComparator:
                 break
 
             for target_row in target_data:
+                self._ensure_not_cancelled()
                 if len(diffs) >= max_diffs:
                     break
                 target_pk = self._extract_pk_with_mapping(

@@ -1,5 +1,6 @@
 """达梦(DM)数据库连接器"""
 from typing import List, Dict, Any, Optional
+import re
 from .base import BaseConnector, TableInfo, ColumnInfo, IndexInfo, ConstraintInfo
 
 
@@ -26,15 +27,22 @@ class DMConnector(BaseConnector):
         """建立连接"""
         try:
             import dmPython
-            
-            self._connection = dmPython.connect(
-                host=self.host,
-                port=self.port,
-                user=self.username,
-                password=self.password,
-                schema=self.schema or self.username.upper(),
-                login_timeout=self.timeout
-            )
+
+            # dmPython in Windows environment is stable with DSN mode.
+            dsn = f"{self.username}/{self.password}@{self.host}:{self.port}"
+            self._connection = dmPython.connect(dsn)
+
+            # Keep behavior consistent with other connectors: use explicit schema when provided.
+            active_schema = self.schema or self.username.upper()
+            if active_schema:
+                normalized_schema = str(active_schema).strip().upper()
+                if not re.match(r"^[A-Z0-9_#$]+$", normalized_schema):
+                    raise ConnectionError(f"非法的达梦 schema 名称: {active_schema}")
+                cursor = self._connection.cursor()
+                try:
+                    cursor.execute(f"SET SCHEMA {normalized_schema}")
+                finally:
+                    cursor.close()
             return True
         except ImportError:
             raise ConnectionError("未安装dmPython驱动，请从达梦官网下载安装")
@@ -46,13 +54,54 @@ class DMConnector(BaseConnector):
         if self._connection:
             self._connection.close()
             self._connection = None
-    
+
+    def _get_instance_name(self) -> str:
+        """读取当前连接实例名，用于与配置的 database 字段做严格校验。"""
+        if not self._connection:
+            raise ConnectionError("达梦数据库未连接")
+
+        sql_candidates = [
+            "SELECT INSTANCE_NAME FROM V$INSTANCE",
+            "SELECT PARA_VALUE FROM V$DM_INI WHERE UPPER(PARA_NAME) = 'INSTANCE_NAME'",
+        ]
+
+        last_exc = None
+        for sql in sql_candidates:
+            cursor = self._connection.cursor()
+            try:
+                cursor.execute(sql)
+                row = cursor.fetchone()
+                if row and row[0]:
+                    instance_name = str(row[0]).strip()
+                    if instance_name:
+                        return instance_name
+            except Exception as exc:
+                last_exc = exc
+            finally:
+                cursor.close()
+
+        if last_exc is not None:
+            raise ConnectionError(f"读取达梦实例名失败: {last_exc}")
+        raise ConnectionError("读取达梦实例名失败: 查询结果为空")
+
+    def _validate_database_instance(self) -> None:
+        """将前端 database 字段作为实例名进行严格校验。"""
+        expected = str(self.database or "").strip()
+        if not expected:
+            raise ConnectionError("数据库名不能为空，达梦测试连接需要用于实例名校验")
+
+        actual = self._get_instance_name()
+        if actual.upper() != expected.upper():
+            raise ConnectionError(
+                f"达梦实例名不匹配: 当前实例为 {actual}，配置数据库名为 {expected}"
+            )
+
     def test_connection(self) -> Dict[str, Any]:
         """测试连接"""
         try:
             self.connect()
+            self._validate_database_instance()
             version = self.get_version()
-            self.disconnect()
             return {
                 "success": True,
                 "message": "连接成功",
@@ -64,6 +113,11 @@ class DMConnector(BaseConnector):
                 "message": str(e),
                 "version": None
             }
+        finally:
+            try:
+                self.disconnect()
+            except Exception:
+                pass
     
     def get_tables(self) -> List[TableInfo]:
         """获取表列表"""

@@ -7,6 +7,61 @@ import { resolveApiUrl } from '@/services/api';
 
 const { Option } = Select;
 
+type DiffCategory = 'structure' | 'data';
+
+interface DiffTypeMeta {
+  text: string;
+  color: string;
+  category: DiffCategory;
+}
+
+const DIFF_TYPE_META: Record<string, DiffTypeMeta> = {
+  table_missing_in_target: { text: '目标缺表', color: 'red', category: 'structure' },
+  table_extra_in_target: { text: '目标多表', color: 'orange', category: 'structure' },
+  column_missing: { text: '字段缺失', color: 'red', category: 'structure' },
+  column_extra: { text: '字段多余', color: 'orange', category: 'structure' },
+  column_type_diff: { text: '字段类型差异', color: 'gold', category: 'structure' },
+  column_length_diff: { text: '字段长度差异', color: 'geekblue', category: 'structure' },
+  column_precision_diff: { text: '字段精度/小数位差异', color: 'cyan', category: 'structure' },
+  column_nullable_diff: { text: '字段可空性差异', color: 'magenta', category: 'structure' },
+  column_default_diff: { text: '字段默认值差异', color: 'purple', category: 'structure' },
+  index_diff: { text: '索引差异', color: 'blue', category: 'structure' },
+  constraint_diff: { text: '约束差异', color: 'volcano', category: 'structure' },
+  comment_diff: { text: '注释差异', color: 'lime', category: 'structure' },
+  row_count_diff: { text: '行数不一致', color: 'gold', category: 'data' },
+  row_missing_in_target: { text: '目标缺行', color: 'red', category: 'data' },
+  row_extra_in_target: { text: '目标多行', color: 'volcano', category: 'data' },
+  value_diff: { text: '字段值差异', color: 'orange', category: 'data' },
+  null_diff: { text: '空值差异', color: 'purple', category: 'data' },
+  primary_key_missing: { text: '缺少主键', color: 'red', category: 'data' },
+  table_compare_error: { text: '表比对异常', color: 'red', category: 'data' },
+};
+
+const STRUCTURE_DIFF_TYPE_ORDER = [
+  'table_missing_in_target',
+  'table_extra_in_target',
+  'column_missing',
+  'column_extra',
+  'column_type_diff',
+  'column_length_diff',
+  'column_precision_diff',
+  'column_nullable_diff',
+  'column_default_diff',
+  'index_diff',
+  'constraint_diff',
+  'comment_diff',
+] as const;
+
+const DATA_DIFF_TYPE_ORDER = [
+  'row_count_diff',
+  'row_missing_in_target',
+  'row_extra_in_target',
+  'value_diff',
+  'null_diff',
+  'primary_key_missing',
+  'table_compare_error',
+] as const;
+
 const Result: React.FC = () => {
   const { result_id } = useParams();
   const navigate = useNavigate();
@@ -172,35 +227,88 @@ const Result: React.FC = () => {
     }
   };
 
-  const getDiffTypeColor = (type: string) => {
-    switch (type) {
-      case 'column_missing': return 'red';
-      case 'column_extra': return 'orange';
-      case 'column_type_diff': return 'gold';
-      case 'index_diff': return 'blue';
-      case 'constraint_diff': return 'purple';
-      case 'value_diff': return 'orange';
-      case 'row_missing_in_target': return 'red';
-      case 'row_extra_in_target': return 'volcano';
-      case 'row_count_diff': return 'gold';
-      case 'null_diff': return 'purple';
-      default: return 'default';
+  const getDiffTypeColor = (type: string) => DIFF_TYPE_META[type]?.color || 'default';
+  const getDiffTypeText = (type: string) => DIFF_TYPE_META[type]?.text || ('未知差异（' + type + '）');
+
+  const normalizeDisplayValue = (value: unknown) => {
+    if (value === null || value === undefined) {
+      return '-';
+    }
+    const text = String(value).trim();
+    return text ? text : '-';
+  };
+
+  const parseMappedTableName = (tableName?: string) => {
+    const raw = normalizeDisplayValue(tableName);
+    if (raw === '-') {
+      return { source: '-', target: '-' };
+    }
+    const parts = String(raw).split('->').map((item) => item.trim()).filter(Boolean);
+    if (parts.length === 2) {
+      return { source: parts[0], target: parts[1] };
+    }
+    return { source: raw, target: raw };
+  };
+
+  const renderMultilineText = (text: string) => (
+    <div
+      style={{
+        whiteSpace: 'normal',
+        wordBreak: 'break-word',
+        lineHeight: 1.6,
+      }}
+    >
+      {text}
+    </div>
+  );
+
+  const formatStructureSideValue = (record: StructureDiff, side: 'source' | 'target') => {
+    const value = normalizeDisplayValue(side === 'source' ? record.source_value : record.target_value);
+    const isSource = side === 'source';
+
+    switch (record.diff_type) {
+      case 'column_missing':
+        return isSource
+          ? `源字段类型：${value}`
+          : `目标当前状态：字段不存在（期望字段名：${value}）`;
+      case 'column_extra':
+        return isSource
+          ? '源当前状态：字段不存在'
+          : `目标字段类型：${value}`;
+      case 'column_type_diff':
+        return isSource ? `源字段类型：${value}` : `目标字段类型：${value}`;
+      case 'column_length_diff':
+        return isSource ? `源字段长度：${value}` : `目标字段长度：${value}`;
+      case 'column_precision_diff':
+        return isSource ? `源精度/小数位：${value}` : `目标精度/小数位：${value}`;
+      case 'column_nullable_diff':
+        return isSource ? `源可空性：${value}` : `目标可空性：${value}`;
+      case 'column_default_diff':
+        return isSource ? `源默认值：${value}` : `目标默认值：${value}`;
+      case 'comment_diff':
+        return isSource ? `源注释：${value}` : `目标注释：${value}`;
+      default:
+        return isSource ? `源侧：${value}` : `目标侧：${value}`;
     }
   };
 
-  const getDiffTypeText = (type: string) => {
-    switch (type) {
-      case 'column_missing': return '字段缺失';
-      case 'column_extra': return '多余字段';
-      case 'column_type_diff': return '类型不一致';
-      case 'index_diff': return '索引差异';
-      case 'constraint_diff': return '约束差异';
-      case 'value_diff': return '值不一致';
-      case 'row_missing_in_target': return '目标库缺失';
-      case 'row_extra_in_target': return '目标库多余';
-      case 'row_count_diff': return '行数不一致';
-      case 'null_diff': return '空值差异';
-      default: return type;
+  const formatStructureDetail = (record: StructureDiff) => {
+    const tableName = parseMappedTableName(record.table_name);
+    const fieldName = normalizeDisplayValue(record.field_name);
+    const targetField = normalizeDisplayValue(record.target_value) === '-' ? fieldName : normalizeDisplayValue(record.target_value);
+    const targetCurrent = normalizeDisplayValue(record.target_value);
+
+    switch (record.diff_type) {
+      case 'table_missing_in_target':
+        return `目标库缺少表：${tableName.target}。目标库当前状态：未找到该表。`;
+      case 'table_extra_in_target':
+        return `目标库多出表：${tableName.target}。目标库当前状态：该表存在，但源库不存在。`;
+      case 'column_missing':
+        return `目标表 ${tableName.target} 缺少字段：${fieldName}。期望目标字段名：${targetField}；目标库当前状态：未找到该字段。`;
+      case 'column_extra':
+        return `目标表 ${tableName.target} 存在源侧没有的字段：${fieldName}。目标库当前信息：字段类型为 ${targetCurrent}；源库当前状态：无该字段。`;
+      default:
+        return normalizeDisplayValue(record.diff_detail);
     }
   };
 
@@ -212,10 +320,23 @@ const Result: React.FC = () => {
       width: 120,
       render: (type: string) => <Tag color={getDiffTypeColor(type)}>{getDiffTypeText(type)}</Tag>
     },
-    { title: '字段名', dataIndex: 'field_name', width: 150 },
-    { title: '源库值', dataIndex: 'source_value' },
-    { title: '目标库值', dataIndex: 'target_value' },
-    { title: '详情', dataIndex: 'diff_detail', ellipsis: true },
+    { title: '字段名', dataIndex: 'field_name', width: 150, render: (field_name: string) => normalizeDisplayValue(field_name) },
+    {
+      title: '源侧信息',
+      dataIndex: 'source_value',
+      render: (_: string, record: StructureDiff) => renderMultilineText(formatStructureSideValue(record, 'source')),
+    },
+    {
+      title: '目标侧信息',
+      dataIndex: 'target_value',
+      render: (_: string, record: StructureDiff) => renderMultilineText(formatStructureSideValue(record, 'target')),
+    },
+    {
+      title: '差异说明',
+      dataIndex: 'diff_detail',
+      width: 420,
+      render: (_: string, record: StructureDiff) => renderMultilineText(formatStructureDetail(record)),
+    },
   ];
 
   const dataColumns = [
@@ -339,14 +460,11 @@ const Result: React.FC = () => {
                 value={structureFilterType}
                 onChange={setStructureFilterType}
               >
-                <Option value="table_missing_in_target">目标缺表</Option>
-                <Option value="table_extra_in_target">目标多表</Option>
-                <Option value="column_missing">字段缺失</Option>
-                <Option value="column_extra">字段多余</Option>
-                <Option value="column_type_diff">字段类型差异</Option>
-                <Option value="column_length_diff">字段长度差异</Option>
-                <Option value="column_precision_diff">字段精度差异</Option>
-                <Option value="comment_diff">注释差异</Option>
+                {STRUCTURE_DIFF_TYPE_ORDER.map((type) => (
+                  <Option key={type} value={type}>
+                    {getDiffTypeText(type)}
+                  </Option>
+                ))}
               </Select>
               <Button onClick={() => fetchStructureDiffs(1, structurePageInfo.page_size)}>筛选</Button>
             </div>
@@ -384,11 +502,11 @@ const Result: React.FC = () => {
                 value={dataFilterType}
                 onChange={setDataFilterType}
               >
-                <Option value="row_count_diff">行数不一致</Option>
-                <Option value="row_missing_in_target">目标缺行</Option>
-                <Option value="row_extra_in_target">目标多行</Option>
-                <Option value="value_diff">值差异</Option>
-                <Option value="null_diff">空值差异</Option>
+                {DATA_DIFF_TYPE_ORDER.map((type) => (
+                  <Option key={type} value={type}>
+                    {getDiffTypeText(type)}
+                  </Option>
+                ))}
               </Select>
               <Button onClick={() => fetchDataDiffs(1, dataPageInfo.page_size)}>筛选</Button>
             </div>
